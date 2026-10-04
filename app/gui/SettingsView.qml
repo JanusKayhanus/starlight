@@ -1305,6 +1305,23 @@ Flickable {
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Prevents the screensaver from starting or the display from going to sleep while streaming.")
                 }
+
+                CheckBox {
+                    visible: Qt.platform.os === "osx"
+                    id: disableAwdlCheck
+                    width: parent.width
+                    text: qsTr("Disable AirDrop while streaming")
+                    font.pointSize: 12
+                    checked: StreamingPreferences.disableAwdl
+                    onCheckedChanged: {
+                        StreamingPreferences.disableAwdl = checked
+                    }
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 5000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Temporarily disables AirDrop and other AWDL features while streaming to prevent Wi-Fi latency spikes. Installs a small background helper the first time, which requires administrator approval once.")
+                }
             }
         }
     }

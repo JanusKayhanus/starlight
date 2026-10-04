@@ -412,12 +412,16 @@ macx {
         streaming/video/ffmpeg-renderers/vt_avsamplelayer.mm \
         streaming/video/ffmpeg-renderers/vt_metal.mm \
         streaming/input/macoscursor.mm \
+        streaming/awdlsuppressor.cpp \
         gui/dockshortcut.mm \
         gui/macoswindow.mm
+
+    INCLUDEPATH += $$PWD/../awdl-helper
 
     HEADERS += \
         streaming/video/ffmpeg-renderers/vt.h \
         streaming/input/macoscursor.h \
+        streaming/awdlsuppressor.h \
         gui/dockshortcut.h \
         gui/macoswindow.h
 }
@@ -572,7 +576,12 @@ macx {
     APP_BUNDLE_PLIST.files = $$OUT_PWD/Info.plist
     APP_BUNDLE_PLIST.path = Contents
 
-    QMAKE_BUNDLE_DATA += APP_BUNDLE_RESOURCES APP_BUNDLE_PLIST
+    # Privileged helper that suppresses AWDL while streaming. It's installed
+    # from here as a LaunchDaemon when first needed.
+    APP_BUNDLE_AWDL_HELPER.files = $$OUT_PWD/../awdl-helper/MoonlightAWDLHelper
+    APP_BUNDLE_AWDL_HELPER.path = Contents/MacOS
+
+    QMAKE_BUNDLE_DATA += APP_BUNDLE_RESOURCES APP_BUNDLE_PLIST APP_BUNDLE_AWDL_HELPER
 
     !disable-prebuilts {
         APP_BUNDLE_FRAMEWORKS.files = $$files(../libs/mac/Frameworks/*.framework, true) $$files(../libs/mac/lib/*.dylib, true)

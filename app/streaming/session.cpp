@@ -3,6 +3,10 @@
 #include "streaming/streamutils.h"
 #include "backend/richpresencemanager.h"
 
+#ifdef Q_OS_DARWIN
+#include "streaming/awdlsuppressor.h"
+#endif
+
 #include <Limelight.h>
 #include "SDL_compat.h"
 #include "utils.h"
@@ -1291,6 +1295,11 @@ private:
         // Finish cleanup of the connection state
         LiStopConnection();
 
+#ifdef Q_OS_DARWIN
+        // Restore AWDL now that we're done streaming
+        AwdlSuppressor::setSuppressed(false);
+#endif
+
         // Perform a best-effort app quit
         if (shouldQuit) {
             NvHTTP http(m_Session->m_Computer);
@@ -1753,6 +1762,14 @@ void Session::start()
 
     // We're now active
     s_ActiveSession = this;
+
+#ifdef Q_OS_DARWIN
+    // Start suppressing AWDL now, so any authorization prompt is shown
+    // while we're connecting rather than on top of the stream window.
+    if (m_Preferences->disableAwdl) {
+        AwdlSuppressor::setSuppressed(true);
+    }
+#endif
 
     // Initialize the gamepad code with our preferences
     // NB: m_InputHandler must be initialize before starting the connection.
