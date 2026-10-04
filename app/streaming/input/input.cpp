@@ -5,6 +5,10 @@
 #include "path.h"
 #include "utils.h"
 
+#ifdef Q_OS_DARWIN
+#include "macoscursor.h"
+#endif
+
 #include <QtGlobal>
 #include <QDir>
 #include <QGuiApplication>
@@ -232,6 +236,10 @@ SdlInputHandler::~SdlInputHandler()
             SDL_GameControllerClose(m_GamepadState[i].controller);
         }
     }
+
+#ifdef Q_OS_DARWIN
+    MacOSCursor::confineToRegion(m_Window, nullptr, false);
+#endif
 
     SDL_RemoveTimer(m_LongPressTimer);
     SDL_RemoveTimer(m_LeftButtonReleaseTimer);

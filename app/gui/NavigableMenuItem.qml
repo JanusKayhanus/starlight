@@ -2,6 +2,11 @@ import QtQuick 2.0
 import QtQuick.Controls 2.2
 
 MenuItem {
+    // Whether this item is offered at all. Native menus ignore
+    // Item.visible, so menus should set this instead of visible.
+    property bool available: true
+    visible: available
+
     // Ensure focus can't be given to an invisible item
     enabled: visible
     height: visible ? implicitHeight : 0

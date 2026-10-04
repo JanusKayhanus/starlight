@@ -17,7 +17,8 @@ CenteredGridView {
     activeFocusOnTab: true
     topMargin: 20
     bottomMargin: 5
-    cellWidth: 310; cellHeight: 330;
+    cellWidth: nativeMacStyle ? 216 : 310
+    cellHeight: nativeMacStyle ? 206 : 330
     objectName: qsTr("Computers")
 
     Component.onCompleted: {
@@ -98,7 +99,8 @@ CenteredGridView {
             elide: Label.ElideRight
             text: StreamingPreferences.enableMdns ? qsTr("Searching for compatible hosts on your local network...")
                                                   : qsTr("Automatic PC discovery is disabled. Add your PC manually.")
-            font.pointSize: 20
+            font.pointSize: nativeMacStyle ? 15 : 20
+            opacity: nativeMacStyle ? 0.6 : 1.0
             verticalAlignment: Text.AlignVCenter
             wrapMode: Text.Wrap
         }
@@ -107,32 +109,39 @@ CenteredGridView {
     model: computerModel
 
     delegate: NavigableItemDelegate {
-        width: 300; height: 320;
+        // Icons and text are scaled down on macOS to match the size of native UI
+        property real uiScale: nativeMacStyle ? 0.5 : 1.0
+
+        width: nativeMacStyle ? 200 : 300
+        height: nativeMacStyle ? 190 : 320
         grid: pcGrid
 
         property alias pcContextMenu : pcContextMenuLoader.item
 
-        Image {
+        TintedIcon {
             id: pcIcon
             anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            anchors.topMargin: nativeMacStyle ? 16 : 0
             source: "qrc:/res/desktop_windows-48px.svg"
             sourceSize {
-                width: 200
-                height: 200
+                width: 200 * uiScale
+                height: 200 * uiScale
             }
+            opacity: nativeMacStyle && !model.online && !model.statusUnknown ? 0.5 : 1.0
         }
 
-        Image {
+        TintedIcon {
             // TODO: Tooltip
             id: stateIcon
             anchors.horizontalCenter: pcIcon.horizontalCenter
             anchors.verticalCenter: pcIcon.verticalCenter
-            anchors.verticalCenterOffset: !model.online ? -18 : -16
+            anchors.verticalCenterOffset: (!model.online ? -18 : -16) * uiScale
             visible: !model.statusUnknown && (!model.online || !model.paired)
             source: !model.online ? "qrc:/res/warning_FILL1_wght300_GRAD200_opsz24.svg" : "qrc:/res/baseline-lock-24px.svg"
             sourceSize {
-                width: !model.online ? 75 : 70
-                height: !model.online ? 75 : 70
+                width: (!model.online ? 75 : 70) * uiScale
+                height: (!model.online ? 75 : 70) * uiScale
             }
         }
 
@@ -140,9 +149,9 @@ CenteredGridView {
             id: statusUnknownSpinner
             anchors.horizontalCenter: pcIcon.horizontalCenter
             anchors.verticalCenter: pcIcon.verticalCenter
-            anchors.verticalCenterOffset: -15
-            width: 75
-            height: 75
+            anchors.verticalCenterOffset: -15 * uiScale
+            width: 75 * uiScale
+            height: 75 * uiScale
             visible: model.statusUnknown
             running: visible
         }
@@ -153,11 +162,31 @@ CenteredGridView {
 
             width: parent.width
             anchors.top: pcIcon.bottom
-            anchors.bottom: parent.bottom
-            font.pointSize: 36
+            anchors.bottom: nativeMacStyle ? undefined : parent.bottom
+            anchors.topMargin: nativeMacStyle ? 6 : 0
+            leftPadding: nativeMacStyle ? 10 : 0
+            rightPadding: nativeMacStyle ? 10 : 0
+            font.pointSize: nativeMacStyle ? 14 : 36
+            font.weight: nativeMacStyle ? Font.DemiBold : Font.Normal
             horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.Wrap
+            wrapMode: nativeMacStyle ? Text.NoWrap : Text.Wrap
             elide: Text.ElideRight
+        }
+
+        // Status subtitle on macOS, like the secondary text under items in Finder
+        Label {
+            visible: nativeMacStyle
+            anchors.top: pcNameText.bottom
+            anchors.topMargin: 2
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            font.pointSize: 11
+            opacity: 0.6
+            elide: Text.ElideRight
+            text: model.statusUnknown ? qsTr("Connecting…") :
+                  !model.online ? qsTr("Offline") :
+                  !model.paired ? qsTr("Not Paired") :
+                  model.busy ? qsTr("App Running") : qsTr("Online")
         }
 
         Loader {
@@ -178,12 +207,12 @@ CenteredGridView {
                         var appView = component.createObject(stackView, {"computerIndex": index, "objectName": model.name, "showHiddenGames": true})
                         stackView.push(appView)
                     }
-                    visible: model.online && model.paired
+                    available: model.online && model.paired
                 }
                 NavigableMenuItem {
                     text: qsTr("Wake PC")
                     onTriggered: computerModel.wakeComputer(index)
-                    visible: !model.online && model.wakeable
+                    available: !model.online && model.wakeable
                 }
                 NavigableMenuItem {
                     text: qsTr("Test Network")

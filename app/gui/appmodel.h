@@ -41,6 +41,13 @@ public:
 
     Q_INVOKABLE void setAppDirectLaunch(int appIndex, bool directLaunch);
 
+    // Starts dragging a Dock shortcut for the app, so it can be dropped onto the Dock.
+    // Must be called while the mouse button is down. Returns an error message on failure.
+    Q_INVOKABLE QString dragAppToDock(int appIndex);
+
+    // Moves an app to a new position in the launcher, and remembers the order for this computer
+    Q_INVOKABLE void moveApp(int fromIndex, int toIndex);
+
     QVariant data(const QModelIndex &index, int role) const override;
 
     int rowCount(const QModelIndex &parent) const override;
@@ -62,10 +69,16 @@ private:
 
     bool isAppCurrentlyVisible(const NvApp& app);
 
+    // Sorts apps into the order the user arranged them in, with new apps at the end
+    QVector<NvApp> applyCustomOrder(QVector<NvApp> appList);
+
+    QString customOrderKey();
+
     NvComputer* m_Computer;
     BoxArtManager m_BoxArtManager;
     ComputerManager* m_ComputerManager;
     QVector<NvApp> m_VisibleApps, m_AllApps;
     int m_CurrentGameId;
     bool m_ShowHiddenGames;
+    QVector<int> m_CustomOrder;
 };

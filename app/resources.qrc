@@ -11,8 +11,17 @@
         <file>res/no_app_image.png</file>
         <file>res/settings.svg</file>
         <file>res/arrow_left.svg</file>
+        <file>res/chevron_left.svg</file>
+        <file>res/sym-ellipsis.svg</file>
+        <file>res/sym-gear.svg</file>
+        <file>res/sym-play.svg</file>
+        <file>res/sym-plus.svg</file>
+        <file>res/sym-power.svg</file>
+        <file>res/sym-stop.svg</file>
         <file>res/question_mark.svg</file>
         <file>res/moonlight.svg</file>
+        <file>res/moonlight-macos.svg</file>
+        <file>res/dock-shortcut.svg</file>
         <file>res/update.svg</file>
         <file>res/baseline-help_outline-24px.svg</file>
         <file>res/baseline-error_outline-24px.svg</file>

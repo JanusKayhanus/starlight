@@ -19,10 +19,10 @@ Flickable {
     contentWidth: settingsColumn1.width > settingsColumn2.width ? settingsColumn1.width : settingsColumn2.width
     contentHeight: settingsColumn1.height > settingsColumn2.height ? settingsColumn1.height : settingsColumn2.height
 
-    ScrollBar.vertical: ScrollBar {
+    ScrollBar.vertical: OverlayScrollBar {
         anchors {
             left: parent.right
-            leftMargin: -10
+            leftMargin: -15
         }
     }
 
@@ -103,7 +103,7 @@ Flickable {
             id: basicSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
             padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("Basic Settings") + "</font>"
+            title: nativeMacStyle ? qsTr("Basic Settings") : "<font color=\"skyblue\">" + qsTr("Basic Settings") + "</font>"
             font.pointSize: 12
 
             Column {
@@ -879,7 +879,7 @@ Flickable {
             id: audioSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
             padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("Audio Settings") + "</font>"
+            title: nativeMacStyle ? qsTr("Audio Settings") : "<font color=\"skyblue\">" + qsTr("Audio Settings") + "</font>"
             font.pointSize: 12
 
             Column {
@@ -972,7 +972,7 @@ Flickable {
             id: hostSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
             padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("Host Settings") + "</font>"
+            title: nativeMacStyle ? qsTr("Host Settings") : "<font color=\"skyblue\">" + qsTr("Host Settings") + "</font>"
             font.pointSize: 12
 
             Column {
@@ -1012,7 +1012,7 @@ Flickable {
             id: uiSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
             padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("UI Settings") + "</font>"
+            title: nativeMacStyle ? qsTr("UI Settings") : "<font color=\"skyblue\">" + qsTr("UI Settings") + "</font>"
             font.pointSize: 12
 
             Column {
@@ -1321,7 +1321,7 @@ Flickable {
             id: inputSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
             padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("Input Settings") + "</font>"
+            title: nativeMacStyle ? qsTr("Input Settings") : "<font color=\"skyblue\">" + qsTr("Input Settings") + "</font>"
             font.pointSize: 12
 
             Column {
@@ -1469,7 +1469,7 @@ Flickable {
             id: gamepadSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
             padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("Gamepad Settings") + "</font>"
+            title: nativeMacStyle ? qsTr("Gamepad Settings") : "<font color=\"skyblue\">" + qsTr("Gamepad Settings") + "</font>"
             font.pointSize: 12
 
             Column {
@@ -1544,7 +1544,7 @@ Flickable {
             id: advancedSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
             padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("Advanced Settings") + "</font>"
+            title: nativeMacStyle ? qsTr("Advanced Settings") : "<font color=\"skyblue\">" + qsTr("Advanced Settings") + "</font>"
             font.pointSize: 12
 
             Column {

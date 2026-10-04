@@ -55,6 +55,10 @@
 #include "settings/streamingpreferences.h"
 #include "gui/sdlgamepadkeynavigation.h"
 
+#ifdef Q_OS_DARWIN
+#include "gui/macoswindow.h"
+#endif
+
 #if defined(Q_OS_WIN32)
 #define IS_UNSPECIFIED_HANDLE(x) ((x) == INVALID_HANDLE_VALUE || (x) == NULL)
 
@@ -963,8 +967,20 @@ int main(int argc, char *argv[])
     // Create the identity manager on the main thread
     IdentityManager::get();
 
-    // We require the Material theme
-    QQuickStyle::setStyle("Material");
+#ifdef Q_OS_DARWIN
+    // Use the native macOS style, which follows the system appearance and accent color
+    bool nativeMacStyle = !qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_STYLE");
+#else
+    bool nativeMacStyle = false;
+#endif
+
+    if (nativeMacStyle) {
+        QQuickStyle::setStyle("macOS");
+    }
+    else {
+        // We require the Material theme
+        QQuickStyle::setStyle("Material");
+    }
 
     // Our icons are styled for a dark theme, so we do not allow the user to override this
     qputenv("QT_QUICK_CONTROLS_MATERIAL_THEME", "Dark");
@@ -989,7 +1005,8 @@ int main(int argc, char *argv[])
 
     switch (commandLineParserResult) {
     case GlobalCommandLineParser::NormalStartRequested:
-        initialView = "qrc:/gui/PcView.qml";
+        // The macOS launcher combines the PC and app grids into one view
+        initialView = nativeMacStyle ? "qrc:/gui/LauncherView.qml" : "qrc:/gui/PcView.qml";
         break;
     case GlobalCommandLineParser::StreamRequested:
         {
@@ -1035,11 +1052,26 @@ int main(int argc, char *argv[])
     if (hasGUI) {
         engine.rootContext()->setContextProperty("initialView", initialView);
         engine.rootContext()->setContextProperty("runConfigChecks", commandLineParserResult == GlobalCommandLineParser::NormalStartRequested);
+        engine.rootContext()->setContextProperty("nativeMacStyle", nativeMacStyle);
+#ifdef Q_OS_DARWIN
+        if (nativeMacStyle) {
+            // Swap in the macOS variants of our controls from gui/+nativemac
+            engine.setExtraFileSelectors({ QStringLiteral("nativemac") });
+        }
+#endif
 
         // Load the main.qml file
         engine.load(QUrl(QStringLiteral("qrc:/gui/main.qml")));
         if (engine.rootObjects().isEmpty())
             return -1;
+
+#ifdef Q_OS_DARWIN
+        if (nativeMacStyle) {
+            if (auto window = qobject_cast<QWindow*>(engine.rootObjects().first())) {
+                MacOSWindow::useUnifiedTitleBar(window);
+            }
+        }
+#endif
     }
 
     int err = app.exec();

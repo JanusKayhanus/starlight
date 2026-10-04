@@ -7,7 +7,8 @@ import SystemProperties 1.0
 // https://stackoverflow.com/questions/45029968/how-do-i-set-the-combobox-width-to-fit-the-largest-item
 ComboBox {
     property int textWidth
-    property int desiredWidth : leftPadding + textWidth + indicator.width + rightPadding
+    // The native macOS combo box draws its arrow itself rather than using an indicator
+    property int desiredWidth : leftPadding + textWidth + (indicator ? indicator.width : 0) + rightPadding
     property int maximumWidth : parent.width
 
     implicitWidth: desiredWidth < maximumWidth ? desiredWidth : maximumWidth
@@ -42,7 +43,7 @@ ComboBox {
 
         // Override the popup color to improve contrast with the overridden
         // Material 2 background color set in main.qml.
-        if (SystemProperties.usesMaterial3Theme) {
+        if (SystemProperties.usesMaterial3Theme && !nativeMacStyle) {
             popup.background.color = "#424242"
         }
     }

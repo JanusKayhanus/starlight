@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Dock shortcut icon for streaming a host's desktop. Matches moonlight-macos.svg. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4B5FD6"/>
+      <stop offset="0.55" stop-color="#25307A"/>
+      <stop offset="1" stop-color="#0E1238"/>
+    </linearGradient>
+    <linearGradient id="bezel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#C9D1F5"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3A4BB8"/>
+      <stop offset="1" stop-color="#151B52"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.2"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="96" y="116" width="832" height="832" rx="189" fill="#000000" fill-opacity="0.06"/>
+  <rect x="98" y="112" width="828" height="828" rx="187" fill="#000000" fill-opacity="0.08"/>
+  <rect x="100" y="108" width="824" height="824" rx="185" fill="#000000" fill-opacity="0.12"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#sky)"/>
+
+  <!-- Display -->
+  <rect x="222" y="262" width="580" height="400" rx="44" fill="url(#bezel)"/>
+  <rect x="252" y="292" width="520" height="340" rx="20" fill="url(#screen)"/>
+  <path d="M462 662 L562 662 L578 742 L446 742 Z" fill="#C9D1F5"/>
+  <rect x="382" y="736" width="260" height="30" rx="15" fill="#FFFFFF"/>
+
+  <!-- Crescent on the screen: outer (488,472) r96 minus inner (534,434) r83 -->
+  <path d="M473.58 377.09 A96 96 0 1 0 578.48 504.07 A83 83 0 0 1 473.58 377.09 Z" fill="#FFFFFF"/>
+
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#sheen)"/>
+  <rect x="101" y="101" width="822" height="822" rx="184" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="2"/>
+</svg>

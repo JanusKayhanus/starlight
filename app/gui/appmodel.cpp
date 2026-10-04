@@ -1,5 +1,17 @@
 #include "appmodel.h"
 
+#include <QSettings>
+
+#include <climits>
+
+#ifdef Q_OS_DARWIN
+#include "dockshortcut.h"
+
+#include <QDrag>
+#include <QMimeData>
+#include <QPixmap>
+#endif
+
 AppModel::AppModel(QObject *parent)
     : QAbstractListModel(parent)
 {
@@ -17,6 +29,10 @@ void AppModel::initialize(ComputerManager* computerManager, int computerIndex, b
     m_Computer = m_ComputerManager->getComputers().at(computerIndex);
     m_CurrentGameId = m_Computer->currentGameId;
     m_ShowHiddenGames = showHiddenGames;
+
+    for (const QString& id : QSettings().value(customOrderKey()).toStringList()) {
+        m_CustomOrder.append(id.toInt());
+    }
 
     updateAppList(m_Computer->appList);
 }
@@ -149,7 +165,7 @@ void AppModel::updateAppList(QVector<NvApp> newList)
 {
     m_AllApps = newList;
 
-    QVector<NvApp> newVisibleList = getVisibleApps(newList);
+    QVector<NvApp> newVisibleList = getVisibleApps(applyCustomOrder(newList));
 
     // Process removals and updates first
     for (int i = 0; i < m_VisibleApps.count(); i++) {
@@ -177,32 +193,70 @@ void AppModel::updateAppList(QVector<NvApp> newList)
         }
     }
 
-    // Process additions now
-    for (const NvApp& newApp : std::as_const(newVisibleList)) {
-        int insertionIndex = m_VisibleApps.size();
-        bool found = false;
-
-        for (int i = 0; i < m_VisibleApps.count(); i++) {
-            const NvApp& existingApp = m_VisibleApps.at(i);
-
-            if (existingApp.id == newApp.id) {
-                found = true;
-                break;
-            }
-            else if (existingApp.name.toLower() > newApp.name.toLower()) {
-                insertionIndex = i;
-                break;
-            }
-        }
-
-        if (!found) {
-            beginInsertRows(QModelIndex(), insertionIndex, insertionIndex);
-            m_VisibleApps.insert(insertionIndex, newApp);
+    // Process additions now. The remaining apps are already in the new list's order,
+    // so each new app goes in wherever the lists first differ.
+    for (int i = 0; i < newVisibleList.count(); i++) {
+        if (i >= m_VisibleApps.count() || m_VisibleApps.at(i).id != newVisibleList.at(i).id) {
+            beginInsertRows(QModelIndex(), i, i);
+            m_VisibleApps.insert(i, newVisibleList.at(i));
             endInsertRows();
         }
     }
 
     Q_ASSERT(newVisibleList == m_VisibleApps);
+}
+
+QString AppModel::customOrderKey()
+{
+    QReadLocker lock(&m_Computer->lock);
+    return QStringLiteral("launcher/appOrder/") + m_Computer->uuid;
+}
+
+QVector<NvApp> AppModel::applyCustomOrder(QVector<NvApp> appList)
+{
+    if (m_CustomOrder.isEmpty()) {
+        return appList;
+    }
+
+    // Apps the user hasn't arranged keep their alphabetical order, after the arranged ones
+    std::stable_sort(appList.begin(), appList.end(), [this](const NvApp& app1, const NvApp& app2) {
+        qsizetype rank1 = m_CustomOrder.indexOf(app1.id), rank2 = m_CustomOrder.indexOf(app2.id);
+        return (rank1 < 0 ? INT_MAX : rank1) < (rank2 < 0 ? INT_MAX : rank2);
+    });
+    return appList;
+}
+
+void AppModel::moveApp(int fromIndex, int toIndex)
+{
+    if (fromIndex == toIndex || fromIndex < 0 || toIndex < 0 ||
+            fromIndex >= m_VisibleApps.count() || toIndex >= m_VisibleApps.count()) {
+        return;
+    }
+
+    // Move the app next to its new neighbor in the full list too, which keeps hidden
+    // apps in place and the visible list in the same order as the full one
+    int movedId = m_VisibleApps.at(fromIndex).id;
+    int neighborId = m_VisibleApps.at(toIndex).id;
+
+    QVector<int> order;
+    for (const NvApp& app : applyCustomOrder(m_AllApps)) {
+        if (app.id != movedId) {
+            order.append(app.id);
+        }
+    }
+    order.insert(order.indexOf(neighborId) + (toIndex > fromIndex ? 1 : 0), movedId);
+    m_CustomOrder = order;
+
+    // beginMoveRows() takes the destination index from before the move
+    beginMoveRows(QModelIndex(), fromIndex, fromIndex, QModelIndex(), toIndex > fromIndex ? toIndex + 1 : toIndex);
+    m_VisibleApps.move(fromIndex, toIndex);
+    endMoveRows();
+
+    QStringList ids;
+    for (int id : std::as_const(m_CustomOrder)) {
+        ids.append(QString::number(id));
+    }
+    QSettings().setValue(customOrderKey(), ids);
 }
 
 void AppModel::setAppHidden(int appIndex, bool hidden)
@@ -222,6 +276,53 @@ void AppModel::setAppHidden(int appIndex, bool hidden)
     }
 
     m_ComputerManager->clientSideAttributeUpdated(m_Computer);
+}
+
+QString AppModel::dragAppToDock(int appIndex)
+{
+    Q_ASSERT(appIndex < m_VisibleApps.count());
+
+#ifdef Q_OS_DARWIN
+    NvApp app = m_VisibleApps.at(appIndex);
+    QString uuid, name;
+
+    {
+        QReadLocker lock(&m_Computer->lock);
+        uuid = m_Computer->uuid;
+        name = m_Computer->name;
+    }
+
+    QString bundlePath;
+    QString error = DockShortcut::create(uuid, name, app.name, m_BoxArtManager.loadBoxArt(m_Computer, app), &bundlePath);
+    if (!error.isEmpty()) {
+        return error;
+    }
+
+    // Drag the shortcut's file URL, which the Dock accepts like an app dragged from Finder
+    QMimeData* mimeData = new QMimeData();
+    mimeData->setUrls({ QUrl::fromLocalFile(bundlePath) });
+
+    // Lets the launcher recognize its own drags, so tiles can be rearranged by dropping them in the grid
+    mimeData->setData(QStringLiteral("application/x-moonlight-app"), QByteArray::number(app.id));
+
+    QDrag* drag = new QDrag(this);
+    drag->setMimeData(mimeData);
+
+    QPixmap icon(bundlePath + "/Contents/Resources/icon.png");
+    if (!icon.isNull()) {
+        // Show it at Dock icon size, and keep it sharp on Retina displays
+        icon = icon.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        icon.setDevicePixelRatio(2.0);
+        drag->setPixmap(icon);
+        drag->setHotSpot(QPoint(32, 32));
+    }
+
+    // Copy and link only, so dropping into a Finder window can't move the shortcut away
+    drag->exec(Qt::CopyAction | Qt::LinkAction, Qt::LinkAction);
+    return QString();
+#else
+    return tr("Adding to the Dock is only supported on macOS.");
+#endif
 }
 
 void AppModel::setAppDirectLaunch(int appIndex, bool directLaunch)

@@ -1,0 +1,86 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>A — Sidebar Library</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.sidebar {
+  width: 236px; padding: 52px 10px 12px;
+  background: linear-gradient(180deg, rgba(58,58,72,.92), rgba(40,40,50,.92));
+  border-right: .5px solid rgba(0,0,0,.6);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sidebar .label { padding: 14px 10px 6px; }
+.row { display: flex; align-items: center; gap: 9px; padding: 6px 10px; border-radius: 6px; font-size: 13px; }
+.row.sel { background: rgba(255,255,255,.12); }
+.row .ic { width: 18px; text-align: center; color: #0a84ff; font-size: 14px; }
+.row .sub { margin-left: auto; font-size: 11px; color: rgba(255,255,255,.4); }
+.sidebar .spacer { flex: 1; }
+.main { flex: 1; display: flex; flex-direction: column; }
+.toolbar {
+  height: 52px; display: flex; align-items: center; gap: 14px; padding: 0 18px;
+  border-bottom: .5px solid rgba(0,0,0,.6);
+}
+.toolbar h1 { font-size: 15px; font-weight: 700; }
+.toolbar .meta { font-size: 11px; color: rgba(255,255,255,.45); display: flex; gap: 6px; align-items: center; }
+.toolbar .grow { flex: 1; }
+.search { width: 200px; height: 26px; border-radius: 7px; background: rgba(255,255,255,.08); font-size: 12px; color: rgba(255,255,255,.35); display: flex; align-items: center; padding: 0 9px; gap: 6px; }
+.seg { display: flex; background: rgba(255,255,255,.08); border-radius: 7px; padding: 2px; }
+.seg span { font-size: 12px; padding: 3px 9px; border-radius: 5px; color: rgba(255,255,255,.6); }
+.seg span.on { background: rgba(255,255,255,.18); color: #fff; }
+.content { flex: 1; overflow: hidden; padding: 22px 26px; }
+.section { font-size: 20px; font-weight: 700; margin: 4px 0 14px; }
+.grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 22px 20px; }
+.card .art { aspect-ratio: 3/4; border-radius: 10px; position: relative; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 .5px rgba(255,255,255,.12), 0 8px 20px rgba(0,0,0,.35); }
+.card .name { font-size: 13px; font-weight: 500; margin-top: 8px; }
+.card .sub { font-size: 11px; color: rgba(255,255,255,.45); margin-top: 1px; }
+.card.running .art { box-shadow: 0 0 0 2.5px #0a84ff, 0 8px 24px rgba(10,132,255,.3); }
+.badge { position: absolute; top: 8px; left: 8px; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 99px; background: #0a84ff; }
+.card.hover .art::after { content: "▶"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 30px; background: rgba(0,0,0,.35); border-radius: 10px; }
+.pin { position: absolute; bottom: 8px; right: 8px; font-size: 11px; background: rgba(0,0,0,.45); border-radius: 5px; padding: 2px 5px; }
+.banner { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 10px; margin-bottom: 22px;
+  background: rgba(10,132,255,.12); border: .5px solid rgba(10,132,255,.35); font-size: 13px; }
+.banner .grow { flex: 1; }
+</style></head>
+<body>
+<div class="caption">Direction A — Sidebar Library (like Music / Finder)</div>
+<div class="window">
+  <div class="traffic"><i></i><i></i><i></i></div>
+  <aside class="sidebar">
+    <div class="label">COMPUTERS</div>
+    <div class="row sel"><span class="ic">🖥</span>DESKTOP-BUO46UK<span class="sub"><span class="dot busy"></span></span></div>
+    <div class="row"><span class="ic">💻</span>Living Room PC<span class="sub"><span class="dot on"></span></span></div>
+    <div class="row"><span class="ic" style="opacity:.4">🖥</span><span style="opacity:.5">Office-Tower</span><span class="sub"><span class="dot off"></span></span></div>
+    <div class="label">LIBRARY</div>
+    <div class="row"><span class="ic">⭐</span>Favorites</div>
+    <div class="row"><span class="ic">🕘</span>Recently Played</div>
+    <div class="row"><span class="ic">📌</span>In Dock</div>
+    <div class="spacer"></div>
+    <div class="row"><span class="ic">＋</span>Add Computer…</div>
+  </aside>
+  <section class="main">
+    <div class="toolbar">
+      <div>
+        <h1>DESKTOP-BUO46UK</h1>
+        <div class="meta"><span class="dot on"></span>Online · 192.168.1.42 · Sunshine</div>
+      </div>
+      <div class="grow"></div>
+      <div class="seg"><span class="on">▦</span><span>☰</span></div>
+      <div class="search">⌕ Search apps</div>
+      <span class="sym">⚙︎</span>
+    </div>
+    <div class="content">
+      <div class="banner"><span class="dot busy"></span><div class="grow"><b>Desktop</b> is running · 1440p · 120 FPS · HEVC</div>
+        <button class="btn secondary">Quit</button><button class="btn">Resume</button></div>
+      <div class="section">Apps</div>
+      <div class="grid">
+        <div class="card running"><div class="art art-desktop"><span class="glyph">⊞</span><span class="badge">RUNNING</span><span class="pin">📌</span></div><div class="name">Desktop</div><div class="sub">Running · 25 min</div></div>
+        <div class="card"><div class="art art-steam"><span class="glyph">♨︎</span></div><div class="name">Steam</div><div class="sub">Yesterday</div></div>
+        <div class="card"><div class="art art-bigpic"><span class="glyph">▣</span></div><div class="name">Steam Big Picture</div><div class="sub">Last week</div></div>
+        <div class="card"><div class="art art-cyber"></div><div class="name">Cyberpunk 2077</div><div class="sub">2 days ago</div></div>
+        <div class="card"><div class="art art-elden"></div><div class="name">Elden Ring</div><div class="sub">Never played</div></div>
+      </div>
+    </div>
+  </section>
+</div>
+</body></html>

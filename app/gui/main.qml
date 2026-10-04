@@ -2,7 +2,8 @@ import QtQuick 2.9
 import QtQuick.Controls 2.2
 import QtQuick.Layouts 1.3
 import QtQuick.Window 2.2
-import QtQuick.Controls.Material 2.2
+// Aliased so this doesn't override the controls of the native macOS style on Qt 6
+import QtQuick.Controls.Material 2.2 as M
 
 import ComputerManager 1.0
 import AutoUpdateChecker 1.0
@@ -19,22 +20,30 @@ ApplicationWindow {
     property bool clearOnBack: false
 
     id: window
-    width: 1280
-    height: 600
+    width: nativeMacStyle ? 1180 : 1280
+    height: nativeMacStyle ? 760 : 600
+    minimumWidth: nativeMacStyle ? 760 : 0
+    minimumHeight: nativeMacStyle ? 520 : 0
 
     // This function runs prior to creation of the initial StackView item
     function doEarlyInit() {
         // Override the background color to Material 2 colors for Qt 6.5+
         // in order to improve contrast between GFE's placeholder box art
         // and the background of the app grid.
-        if (SystemProperties.usesMaterial3Theme) {
-            Material.background = "#303030"
+        if (SystemProperties.usesMaterial3Theme && !nativeMacStyle) {
+            M.Material.background = "#303030"
         }
 
         SdlGamepadKeyNavigation.enable()
     }
 
     Component.onCompleted: {
+        if (nativeMacStyle) {
+            // The launcher and toolbar extend under the title bar themselves,
+            // so don't inset the content by the title bar's safe area
+            topPadding = 0
+        }
+
         // Show the window according to the user's preferences
         if (SystemProperties.hasDesktopEnvironment) {
             if (StreamingPreferences.uiDisplayMode == StreamingPreferences.UI_MAXIMIZED) {
@@ -233,15 +242,57 @@ ApplicationWindow {
         }
     }
 
+    // Native menu bar on macOS
+    AppMenuBar {}
+
+    // macOS toolbar background, which also lets the window be dragged from the toolbar
+    // since the toolbar takes the place of the title bar (see MacOSWindow::useUnifiedTitleBar)
+    Component {
+        id: macToolBarBackground
+
+        Rectangle {
+            color: toolBar.palette.window
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 1
+                color: toolBar.palette.windowText
+                opacity: 0.1
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                onPressed: window.startSystemMove()
+                onDoubleClicked: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized()
+            }
+        }
+    }
+
     header: ToolBar {
         id: toolBar
-        height: 60
+        // The launcher draws its own title bar
+        visible: !(stackView.currentItem instanceof LauncherView)
+        height: nativeMacStyle ? 52 : 60
         anchors.topMargin: 5
         anchors.bottomMargin: 5
 
+        Component.onCompleted: {
+            if (nativeMacStyle) {
+                background = macToolBarBackground.createObject(toolBar)
+
+                // The toolbar replaces the title bar, so ignore the title bar's safe area
+                topPadding = 0
+                bottomPadding = 0
+                leftPadding = 0
+                rightPadding = 0
+            }
+        }
+
         Label {
             id: titleLabel
-            visible: toolBar.width > 700
+            visible: toolBar.width > 700 && !nativeMacStyle
             anchors.fill: parent
             text: stackView.currentItem.objectName
             font.pointSize: 20
@@ -251,16 +302,17 @@ ApplicationWindow {
         }
 
         RowLayout {
-            spacing: 10
-            anchors.leftMargin: 10
-            anchors.rightMargin: 10
+            spacing: nativeMacStyle ? 4 : 10
+            // Leave room for the traffic light buttons on macOS
+            anchors.leftMargin: nativeMacStyle && window.visibility !== Window.FullScreen ? 84 : 10
+            anchors.rightMargin: nativeMacStyle ? 12 : 10
             anchors.fill: parent
 
             NavigableToolButton {
                 // Only make the button visible if the user has navigated somewhere.
                 visible: stackView.depth > 1
 
-                iconSource: "qrc:/res/arrow_left.svg"
+                iconSource: nativeMacStyle ? "qrc:/res/chevron_left.svg" : "qrc:/res/arrow_left.svg"
 
                 onClicked: goBack()
 
@@ -273,9 +325,11 @@ ApplicationWindow {
             // we need to ensure the toolbar controls don't collide
             Label {
                 id: titleRowLabel
-                font.pointSize: titleLabel.font.pointSize
+                font.pointSize: nativeMacStyle ? 15 : titleLabel.font.pointSize
+                font.weight: nativeMacStyle ? Font.Bold : Font.Normal
+                leftPadding: nativeMacStyle ? 6 : 0
                 elide: Label.ElideRight
-                horizontalAlignment: Qt.AlignHCenter
+                horizontalAlignment: nativeMacStyle ? Qt.AlignLeft : Qt.AlignHCenter
                 verticalAlignment: Qt.AlignVCenter
                 Layout.fillWidth: true
 
@@ -289,7 +343,8 @@ ApplicationWindow {
                 id: versionLabel
                 visible: stackView.currentItem instanceof SettingsView
                 text: qsTr("Version %1").arg(SystemProperties.versionString)
-                font.pointSize: 12
+                font.pointSize: nativeMacStyle ? 11 : 12
+                opacity: nativeMacStyle ? 0.6 : 1.0
                 horizontalAlignment: Qt.AlignRight
                 verticalAlignment: Qt.AlignVCenter
             }
@@ -346,6 +401,7 @@ ApplicationWindow {
                 id: updateButton
 
                 iconSource: "qrc:/res/update.svg"
+                monochrome: false
 
                 ToolTip.delay: 1000
                 ToolTip.timeout: 3000

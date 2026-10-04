@@ -5,6 +5,9 @@ import QtQuick.Layouts 1.3
 ToolButton {
     property string iconSource
 
+    // Used by the macOS variant to decide whether to tint the icon
+    property bool monochrome: true
+
     activeFocusOnTab: true
 
     icon.source: iconSource

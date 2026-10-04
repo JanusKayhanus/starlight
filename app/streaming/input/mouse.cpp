@@ -4,6 +4,10 @@
 #include "SDL_compat.h"
 #include "streaming/streamutils.h"
 
+#ifdef Q_OS_DARWIN
+#include "macoscursor.h"
+#endif
+
 void SdlInputHandler::notifyMouseLeave()
 {
     if (m_NeedsManualCaptureOnLeave) {
@@ -286,6 +290,9 @@ void SdlInputHandler::updatePointerRegionLock()
 {
     // Pointer region lock is irrelevant in relative mouse mode
     if (SDL_GetRelativeMouseMode()) {
+#ifdef Q_OS_DARWIN
+        MacOSCursor::confineToRegion(m_Window, nullptr, false);
+#endif
         return;
     }
 
@@ -333,4 +340,29 @@ void SdlInputHandler::updatePointerRegionLock()
         SDL_SetWindowGrab(m_Window, SDL_FALSE);
 #endif
     }
+
+#ifdef Q_OS_DARWIN
+    // SDL's mouse rect doesn't stop the cursor from escaping into the menu bar and
+    // notch area above a fullscreen window, which also reveals the menu bar over the
+    // stream. While captured in fullscreen, we stop the cursor at the top edge of the
+    // video like it would be on a real monitor. The other edges are only enforced if
+    // pointer region lock is active, so the cursor can still move to other displays.
+    if (isCaptureActive() && (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_FULLSCREEN)) {
+        SDL_Rect src, dst;
+
+        src.x = src.y = 0;
+        src.w = m_StreamWidth;
+        src.h = m_StreamHeight;
+
+        dst.x = dst.y = 0;
+        SDL_GetWindowSize(m_Window, &dst.w, &dst.h);
+
+        StreamUtils::scaleSourceToDestinationSurface(&src, &dst);
+
+        MacOSCursor::confineToRegion(m_Window, &dst, !m_PointerRegionLockActive);
+    }
+    else {
+        MacOSCursor::confineToRegion(m_Window, nullptr, false);
+    }
+#endif
 }

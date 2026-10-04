@@ -29,7 +29,7 @@ NavigableDialog {
             running: visible
         }
 
-        Image {
+        TintedIcon {
             id: dialogImage
             source: (standardButtons & Dialog.Yes) ?
                         "qrc:/res/baseline-help_outline-24px.svg" :
@@ -62,7 +62,8 @@ NavigableDialog {
         standardButtons: dialog.standardButtons
 
         delegate: Button {
-            flat: true
+            // Dialog buttons are bordered push buttons on macOS
+            flat: !nativeMacStyle
 
             Keys.onReturnPressed: clicked()
             Keys.onEnterPressed: clicked()

@@ -1,6 +1,7 @@
 import QtQuick 2.9
 import QtQuick.Controls 2.2
-import QtQuick.Controls.Material 2.2
+// Aliased so this doesn't override the controls of the native macOS style on Qt 6
+import QtQuick.Controls.Material 2.2 as M
 
 import AppModel 1.0
 import ComputerManager 1.0
@@ -18,7 +19,11 @@ CenteredGridView {
     activeFocusOnTab: true
     topMargin: 20
     bottomMargin: 5
-    cellWidth: 230; cellHeight: 297;
+    cellWidth: nativeMacStyle ? 184 : 230
+    cellHeight: nativeMacStyle ? 244 : 297
+
+    // Box art and controls are scaled down on macOS to match the size of native UI
+    property real uiScale: nativeMacStyle ? 0.76 : 1.0
 
     function computerLost()
     {
@@ -71,7 +76,8 @@ CenteredGridView {
     model: appModel
 
     delegate: NavigableItemDelegate {
-        width: 220; height: 287;
+        width: nativeMacStyle ? 172 : 220
+        height: nativeMacStyle ? 232 : 287
         grid: appGrid
 
         property alias appContextMenu: appContextMenuLoader.item
@@ -80,7 +86,7 @@ CenteredGridView {
         // Dim the app if it's hidden
         opacity: model.hidden ? 0.4 : 1.0
 
-        Image {
+        BoxArt {
             property bool isPlaceholder: false
 
             id: appIcon
@@ -105,8 +111,8 @@ CenteredGridView {
                     isPlaceholder = false
                 }
 
-                width = 200
-                height = 267
+                width = 200 * uiScale
+                height = 267 * uiScale
             }
 
             // Display a tooltip with the full name if it's truncated
@@ -126,15 +132,15 @@ CenteredGridView {
                     // Don't steal focus from the toolbar buttons
                     focusPolicy: Qt.NoFocus
 
-                    anchors.horizontalCenterOffset: appIcon.isPlaceholder ? -47 : 0
-                    anchors.verticalCenterOffset: appIcon.isPlaceholder ? -75 : -60
+                    anchors.horizontalCenterOffset: (appIcon.isPlaceholder ? -47 : 0) * uiScale
+                    anchors.verticalCenterOffset: (appIcon.isPlaceholder ? -75 : -60) * uiScale
                     anchors.centerIn: parent
-                    implicitWidth: 85
-                    implicitHeight: 85
+                    implicitWidth: nativeMacStyle ? 56 : 85
+                    implicitHeight: nativeMacStyle ? 56 : 85
 
                     icon.source: "qrc:/res/play_arrow_FILL1_wght700_GRAD200_opsz48.svg"
-                    icon.width: 75
-                    icon.height: 75
+                    icon.width: nativeMacStyle ? 34 : 75
+                    icon.height: nativeMacStyle ? 34 : 75
 
                     onClicked: {
                         launchOrResumeSelectedApp(true)
@@ -145,22 +151,26 @@ CenteredGridView {
                     ToolTip.timeout: 3000
                     ToolTip.visible: hovered
 
-                    Material.background: "#D0808080"
+                    M.Material.background: "#D0808080"
+
+                    // Translucent dark glass on macOS
+                    palette.button: "#B0202020"
+                    palette.buttonText: "white"
                 }
 
                 RoundButton {
                     // Don't steal focus from the toolbar buttons
                     focusPolicy: Qt.NoFocus
 
-                    anchors.horizontalCenterOffset: appIcon.isPlaceholder ? 47 : 0
-                    anchors.verticalCenterOffset: appIcon.isPlaceholder ? -75 : 60
+                    anchors.horizontalCenterOffset: (appIcon.isPlaceholder ? 47 : 0) * uiScale
+                    anchors.verticalCenterOffset: (appIcon.isPlaceholder ? -75 : 60) * uiScale
                     anchors.centerIn: parent
-                    implicitWidth: 85
-                    implicitHeight: 85
+                    implicitWidth: nativeMacStyle ? 56 : 85
+                    implicitHeight: nativeMacStyle ? 56 : 85
 
                     icon.source: "qrc:/res/stop_FILL1_wght700_GRAD200_opsz48.svg"
-                    icon.width: 75
-                    icon.height: 75
+                    icon.width: nativeMacStyle ? 30 : 75
+                    icon.height: nativeMacStyle ? 30 : 75
 
                     onClicked: {
                         doQuitGame()
@@ -171,7 +181,11 @@ CenteredGridView {
                     ToolTip.timeout: 3000
                     ToolTip.visible: hovered
 
-                    Material.background: "#D0808080"
+                    M.Material.background: "#D0808080"
+
+                    // Translucent dark glass on macOS
+                    palette.button: "#B0202020"
+                    palette.buttonText: "white"
                 }
             }
         }
@@ -184,7 +198,7 @@ CenteredGridView {
             // in the time in which the text loads for each game.
 
             width: appIcon.width
-            height: model.running ? 175 : appIcon.height
+            height: model.running ? 175 * uiScale : appIcon.height
 
             anchors.left: appIcon.left
             anchors.right: appIcon.right
@@ -193,9 +207,10 @@ CenteredGridView {
             sourceComponent: Label {
                 id: appNameText
                 text: model.name
-                font.pointSize: 22
-                leftPadding: 20
-                rightPadding: 20
+                font.pointSize: nativeMacStyle ? 14 : 22
+                font.weight: nativeMacStyle ? Font.DemiBold : Font.Normal
+                leftPadding: 20 * uiScale
+                rightPadding: 20 * uiScale
                 verticalAlignment: Text.AlignVCenter
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
@@ -302,7 +317,7 @@ CenteredGridView {
                 NavigableMenuItem {
                     text: qsTr("Quit Game")
                     onTriggered: doQuitGame()
-                    visible: model.running
+                    available: model.running
                 }
                 NavigableMenuItem {
                     checkable: true
@@ -339,7 +354,8 @@ CenteredGridView {
 
         Label {
             text: qsTr("This computer doesn't seem to have any applications or some applications are hidden")
-            font.pointSize: 20
+            font.pointSize: nativeMacStyle ? 15 : 20
+            opacity: nativeMacStyle ? 0.6 : 1.0
             verticalAlignment: Text.AlignVCenter
             wrapMode: Text.Wrap
         }
