@@ -33,6 +33,15 @@ void ComputerSeeker::start(int timeout)
     }
 
     m_ComputerManager->startPolling();
+
+    // The computer may already be online by the time we get here (for example,
+    // if polling brought it online while the UI was starting up). We only
+    // listen for state *changes*, so we must check its current state explicitly
+    // or we would wait for an event that never comes and eventually time out.
+    NvComputer* computer = findMatchingComputer();
+    if (computer != nullptr && isOnline(computer)) {
+        onComputerUpdated(computer);
+    }
 }
 
 void ComputerSeeker::onComputerUpdated(NvComputer *computer)
