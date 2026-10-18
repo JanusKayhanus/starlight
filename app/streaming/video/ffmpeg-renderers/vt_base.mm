@@ -30,7 +30,7 @@ VTBaseRenderer::~VTBaseRenderer() {
     }
 }
 
-bool VTBaseRenderer::isAppleSilicon() {
+static bool isAppleSiliconCached() {
     static uint32_t cpuType = 0;
     if (cpuType == 0) {
         size_t size = sizeof(cpuType);
@@ -45,6 +45,14 @@ bool VTBaseRenderer::isAppleSilicon() {
     // Apple Silicon Macs have CPU_ARCH_ABI64 set, so we need to mask that off.
     // For some reason, 64-bit Intel Macs don't seem to have CPU_ARCH_ABI64 set.
     return (cpuType & ~CPU_ARCH_MASK) == CPU_TYPE_ARM;
+}
+
+bool VTBaseRenderer::isAppleSilicon() {
+    return isAppleSiliconCached();
+}
+
+bool VTSystemInfo::isAppleSilicon() {
+    return isAppleSiliconCached();
 }
 
 bool VTBaseRenderer::checkDecoderCapabilities(id<MTLDevice> device, PDECODER_PARAMETERS params) {

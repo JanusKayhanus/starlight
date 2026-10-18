@@ -23,6 +23,14 @@ protected:
 // A factory is required to avoid pulling in
 // incompatible Objective-C headers.
 
+// Exposes platform checks that don't require Objective-C to callers
+// (like the renderer selection logic in ffmpeg.cpp).
+class VTSystemInfo {
+public:
+    // Returns true if this process is running on Apple Silicon hardware.
+    static bool isAppleSilicon();
+};
+
 class VTMetalRendererFactory {
 public:
     static

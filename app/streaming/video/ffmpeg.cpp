@@ -1009,9 +1009,14 @@ IFFmpegRenderer* FFmpegVideoDecoder::createHwAccelRenderer(const AVCodecHWConfig
 #endif
 #ifdef Q_OS_DARWIN
         case AV_HWDEVICE_TYPE_VIDEOTOOLBOX:
-            // Prefer the libplacebo (on MoltenVK) renderer unless explicitly opted out
+            // Use the libplacebo (on MoltenVK) renderer only if it was explicitly
+            // selected, or as the automatic default on Intel Macs. On Apple Silicon
+            // we prefer the native Metal renderer, which avoids the Vulkan/MoltenVK
+            // translation layer and the per-frame libplacebo texture churn,
+            // reducing CPU usage and power draw.
 #ifdef HAVE_LIBPLACEBO_VULKAN
-            if (params->renderer == StreamingPreferences::RS_AUTO || params->renderer == StreamingPreferences::RS_VULKAN) {
+            if (params->renderer == StreamingPreferences::RS_VULKAN ||
+                    (params->renderer == StreamingPreferences::RS_AUTO && !VTSystemInfo::isAppleSilicon())) {
                 return new PlVkRenderer(hwDecodeCfg->device_type);
             }
 #endif
@@ -1019,7 +1024,9 @@ IFFmpegRenderer* FFmpegVideoDecoder::createHwAccelRenderer(const AVCodecHWConfig
                 return VTRendererFactory::createRenderer();
             }
             else {
-                // This covers both Metal explicitly selected and probe-only (since Metal is cheap to instantiate)
+                // This covers Metal explicitly selected, the Apple Silicon
+                // automatic default, and probe-only (since Metal is cheap to
+                // instantiate)
                 return VTMetalRendererFactory::createRenderer(true);
             }
 #endif
