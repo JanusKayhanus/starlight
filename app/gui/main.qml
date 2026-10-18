@@ -1,5 +1,5 @@
 import QtQuick 2.9
-import QtQuick.Controls 2.2
+import QtQuick.Controls 2.3
 import QtQuick.Layouts 1.3
 import QtQuick.Window 2.2
 // Aliased so this doesn't override the controls of the native macOS style on Qt 6
@@ -14,10 +14,6 @@ import SdlGamepadKeyNavigation 1.0
 ApplicationWindow {
     property bool pollingActive: false
 
-    // Set by SettingsView to force the back operation to pop all
-    // pages except the initial view. This is required when doing
-    // a retranslate() because AppView breaks for some reason.
-    property bool clearOnBack: false
 
     id: window
     width: nativeMacStyle ? 1180 : 1280
@@ -105,14 +101,7 @@ ApplicationWindow {
     ToolTip.toolTip.contentWidth: Math.min(tooltipTextLayoutHelper.width, 400)
 
     function goBack() {
-        if (clearOnBack) {
-            // Pop all items except the first one
-            stackView.pop(null)
-            clearOnBack = false
-        }
-        else {
-            stackView.pop()
-        }
+        stackView.pop()
     }
 
     StackView {
@@ -339,36 +328,6 @@ ApplicationWindow {
                 text: !titleLabel.visible ? stackView.currentItem.objectName : ""
             }
 
-            Label {
-                id: versionLabel
-                visible: stackView.currentItem instanceof SettingsView
-                text: qsTr("Version %1").arg(SystemProperties.versionString)
-                font.pointSize: nativeMacStyle ? 11 : 12
-                opacity: nativeMacStyle ? 0.6 : 1.0
-                horizontalAlignment: Qt.AlignRight
-                verticalAlignment: Qt.AlignVCenter
-            }
-
-            NavigableToolButton {
-                id: discordButton
-                visible: SystemProperties.hasBrowser &&
-                         stackView.currentItem instanceof SettingsView
-
-                iconSource: "qrc:/res/discord.svg"
-
-                ToolTip.delay: 1000
-                ToolTip.timeout: 3000
-                ToolTip.visible: hovered
-                ToolTip.text: qsTr("Join our community on Discord")
-
-                // TODO need to make sure browser is brought to foreground.
-                onClicked: Qt.openUrlExternally("https://moonlight-stream.org/discord");
-
-                Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocus)
-                }
-            }
-
             NavigableToolButton {
                 id: addPcButton
                 visible: stackView.currentItem instanceof PcView
@@ -482,7 +441,7 @@ ApplicationWindow {
 
                 iconSource:  "qrc:/res/settings.svg"
 
-                onClicked: navigateTo("qrc:/gui/SettingsView.qml", SettingsView)
+                onClicked: settingsDrawer.toggle()
 
                 Keys.onDownPressed: {
                     stackView.currentItem.forceActiveFocus(Qt.TabFocus)
@@ -500,6 +459,11 @@ ApplicationWindow {
                 ToolTip.text: qsTr("Settings") + (settingsShortcut.nativeText ? (" ("+settingsShortcut.nativeText+")") : "")
             }
         }
+    }
+
+    SettingsView {
+        id: settingsDrawer
+        parent: Overlay.overlay
     }
 
     ErrorMessageDialog {

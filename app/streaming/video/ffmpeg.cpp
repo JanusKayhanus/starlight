@@ -8,6 +8,8 @@
 extern "C" {
 #include <libavutil/mastering_display_metadata.h>
 #include <libavutil/pixdesc.h>
+#include <libavutil/hwcontext.h>
+#include <libswscale/swscale.h>
 }
 
 #include "ffmpeg-renderers/sdlvid.h"
@@ -2214,6 +2216,80 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
 
     m_FramesIn++;
     return DR_OK;
+}
+
+QImage FFmpegVideoDecoder::captureLastFrame(int maxWidth)
+{
+    if (m_Pacer == nullptr) {
+        return QImage();
+    }
+
+    AVFrame* frame = m_Pacer->cloneLastRenderedFrame();
+    if (frame == nullptr) {
+        return QImage();
+    }
+
+    // Hardware frames must be downloaded into system memory first
+    AVFrame* swFrame = frame;
+    if (frame->hw_frames_ctx != nullptr) {
+        swFrame = av_frame_alloc();
+        if (swFrame == nullptr || av_hwframe_transfer_data(swFrame, frame, 0) < 0) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "Unable to download frame for snapshot");
+            av_frame_free(&swFrame);
+            av_frame_free(&frame);
+            return QImage();
+        }
+        av_frame_copy_props(swFrame, frame);
+    }
+
+    int width = swFrame->width, height = swFrame->height;
+    if (width > maxWidth) {
+        height = (int)((int64_t)height * maxWidth / width) & ~1;
+        width = maxWidth;
+    }
+
+    QImage image;
+    SwsContext* sws = sws_getContext(swFrame->width, swFrame->height, (AVPixelFormat)swFrame->format,
+                                     width, height, AV_PIX_FMT_BGRA,
+                                     SWS_BILINEAR, nullptr, nullptr, nullptr);
+    if (sws != nullptr) {
+        int colorspace;
+        switch (swFrame->colorspace) {
+        case AVCOL_SPC_BT709:
+            colorspace = SWS_CS_ITU709;
+            break;
+        case AVCOL_SPC_BT2020_NCL:
+        case AVCOL_SPC_BT2020_CL:
+            colorspace = SWS_CS_BT2020;
+            break;
+        default:
+            colorspace = SWS_CS_ITU601;
+            break;
+        }
+        sws_setColorspaceDetails(sws,
+                                 sws_getCoefficients(colorspace), swFrame->color_range == AVCOL_RANGE_JPEG,
+                                 sws_getCoefficients(SWS_CS_DEFAULT), 1,
+                                 0, 1 << 16, 1 << 16);
+
+        // BGRA in memory is QImage's native 32-bit layout on little-endian machines
+        image = QImage(width, height, QImage::Format_RGB32);
+        uint8_t* dstData[4] = { image.bits(), nullptr, nullptr, nullptr };
+        int dstLinesize[4] = { (int)image.bytesPerLine(), 0, 0, 0 };
+        sws_scale(sws, swFrame->data, swFrame->linesize, 0, swFrame->height, dstData, dstLinesize);
+        sws_freeContext(sws);
+    }
+    else {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Unable to convert %s frame for snapshot",
+                    av_get_pix_fmt_name((AVPixelFormat)swFrame->format));
+    }
+
+    if (swFrame != frame) {
+        av_frame_free(&swFrame);
+    }
+    av_frame_free(&frame);
+    return image;
 }
 
 void FFmpegVideoDecoder::renderFrameOnMainThread()

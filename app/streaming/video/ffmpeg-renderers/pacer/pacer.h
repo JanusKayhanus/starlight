@@ -43,6 +43,10 @@ public:
 
     void renderOnMainThread();
 
+    // Returns a new reference to the most recently rendered frame, or nullptr.
+    // The caller must free it with av_frame_free().
+    AVFrame* cloneLastRenderedFrame();
+
 private:
     static int vsyncThread(void* context);
 
@@ -66,7 +70,10 @@ private:
     QWaitCondition m_VsyncSignalled;
     SDL_Thread* m_RenderThread;
     SDL_Thread* m_VsyncThread;
+    // The most recently rendered frame, held until the next one is rendered
     AVFrame* m_DeferredFreeFrame;
+    QMutex m_DeferredFreeFrameLock;
+    bool m_FirstFrameRendered;
     bool m_Stopping;
 
     IVsyncSource* m_VsyncSource;

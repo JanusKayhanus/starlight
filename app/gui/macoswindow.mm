@@ -3,6 +3,7 @@
 #include <QWindow>
 
 #import <Cocoa/Cocoa.h>
+#import <QuartzCore/QuartzCore.h>
 
 // Default horizontal inset of the close button in a unified toolbar
 #define TRAFFIC_LIGHT_INSET_X 20
@@ -70,4 +71,61 @@ void MacOSWindow::useUnifiedTitleBar(QWindow* window, int toolbarHeight)
     Q_UNUSED(window);
     Q_UNUSED(toolbarHeight);
 #endif
+}
+
+static NSWindow* nsWindowForQtWindow(QWindow* window)
+{
+    return reinterpret_cast<NSView*>(window->winId()).window;
+}
+
+void MacOSWindow::prepareStreamWindow(void* streamWindow, QWindow* qtWindow, bool matchFrame)
+{
+    NSWindow* window = (__bridge NSWindow*)streamWindow;
+    if (window == nil) {
+        return;
+    }
+
+    // Dark, borderless-looking title bar to match the launcher
+    window.titlebarAppearsTransparent = YES;
+    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    window.backgroundColor = NSColor.blackColor;
+
+    if (matchFrame && qtWindow != nullptr) {
+        NSWindow* launcherWindow = nsWindowForQtWindow(qtWindow);
+        if (launcherWindow != nil) {
+            [window setFrame:launcherWindow.frame display:NO];
+        }
+    }
+
+    // Stay on screen (so rendering starts normally) but invisible until revealed
+    window.alphaValue = 0.0;
+}
+
+void MacOSWindow::revealStreamWindow(void* streamWindow, double fadeSeconds, std::function<void()> completion)
+{
+    NSWindow* window = (__bridge NSWindow*)streamWindow;
+    if (window == nil || fadeSeconds <= 0) {
+        window.alphaValue = 1.0;
+        completion();
+        return;
+    }
+
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext* context) {
+        context.duration = fadeSeconds;
+        context.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+        window.animator.alphaValue = 1.0;
+    } completionHandler:^{
+        completion();
+    }];
+}
+
+void MacOSWindow::adoptStreamWindowFrame(QWindow* qtWindow, void* streamWindow)
+{
+    NSWindow* window = (__bridge NSWindow*)streamWindow;
+    NSWindow* launcherWindow = qtWindow != nullptr ? nsWindowForQtWindow(qtWindow) : nil;
+    if (window == nil || launcherWindow == nil) {
+        return;
+    }
+
+    [launcherWindow setFrame:window.frame display:NO];
 }

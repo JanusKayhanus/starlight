@@ -33,6 +33,7 @@ Pacer::Pacer(IFFmpegRenderer* renderer, PVIDEO_STATS videoStats) :
     m_RenderThread(nullptr),
     m_VsyncThread(nullptr),
     m_DeferredFreeFrame(nullptr),
+    m_FirstFrameRendered(false),
     m_Stopping(false),
     m_VsyncSource(nullptr),
     m_VsyncRenderer(renderer),
@@ -79,6 +80,12 @@ Pacer::~Pacer()
         av_frame_free(&frame);
     }
     av_frame_free(&m_DeferredFreeFrame);
+}
+
+AVFrame* Pacer::cloneLastRenderedFrame()
+{
+    QMutexLocker locker(&m_DeferredFreeFrameLock);
+    return m_DeferredFreeFrame != nullptr ? av_frame_clone(m_DeferredFreeFrame) : nullptr;
 }
 
 void Pacer::renderOnMainThread()
@@ -342,10 +349,22 @@ void Pacer::renderFrame(AVFrame* frame)
     m_VideoStats->totalRenderTimeUs += (afterRender - beforeRender);
     m_VideoStats->renderedFrames++;
 
+    // Let the session know once the stream is actually on screen
+    if (!m_FirstFrameRendered) {
+        m_FirstFrameRendered = true;
+
+        SDL_Event event = {};
+        event.type = SDL_USEREVENT;
+        event.user.code = SDL_CODE_FIRST_FRAME_RENDERED;
+        SDL_PushEvent(&event);
+    }
+
     // Wait until after next frame to free this one to ensure the GPU
     // doesn't stall or read garbage if the backing buffer gets returned
     // to the pool and the decoder tries to write a new frame into it
+    m_DeferredFreeFrameLock.lock();
     std::swap(frame, m_DeferredFreeFrame);
+    m_DeferredFreeFrameLock.unlock();
     av_frame_free(&frame);
 
     // Drop frames if we have too many queued up for a while

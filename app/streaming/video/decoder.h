@@ -4,7 +4,10 @@
 #include "SDL_compat.h"
 #include "settings/streamingpreferences.h"
 
+#include <QImage>
+
 #define SDL_CODE_FRAME_READY 0
+#define SDL_CODE_FIRST_FRAME_RENDERED 1
 
 #define MAX_SLICES 4
 
@@ -77,4 +80,8 @@ public:
     virtual void renderFrameOnMainThread() = 0;
     virtual void setHdrMode(bool enabled) = 0;
     virtual bool notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO info) = 0;
+
+    // Returns an RGB image of the most recently rendered frame, scaled to fit
+    // within maxWidth, or a null image if none is available
+    virtual QImage captureLastFrame(int maxWidth) { Q_UNUSED(maxWidth); return QImage(); }
 };

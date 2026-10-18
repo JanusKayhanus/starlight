@@ -168,13 +168,18 @@ FocusScope {
             return
         }
 
-        var component = Qt.createComponent("StreamSegue.qml")
-        var segue = component.createObject(stackView, {
-                                               "appName": tile.text,
-                                               "session": appModel.createSessionForApp(tile.appIndex),
-                                               "isResume": runningId === tile.appId
-                                           })
-        stackView.push(segue)
+        // Capture the launcher so the launch transition can start from exactly what's on screen
+        var session = appModel.createSessionForApp(tile.appIndex)
+        launcher.grabToImage(function(grab) {
+            var component = Qt.createComponent("StreamSegue.qml")
+            var segue = component.createObject(stackView, {
+                                                   "appName": tile.text,
+                                                   "session": session,
+                                                   "isResume": runningId === tile.appId,
+                                                   "launcherGrab": grab
+                                               })
+            stackView.push(segue, {}, StackView.Immediate)
+        }, Qt.size(launcher.width * Screen.devicePixelRatio, launcher.height * Screen.devicePixelRatio))
     }
 
     function quitRunningApp()

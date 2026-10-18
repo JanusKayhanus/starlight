@@ -18,6 +18,9 @@
         <file>res/sym-plus.svg</file>
         <file>res/sym-power.svg</file>
         <file>res/sym-stop.svg</file>
+        <file>res/sym-xmark.svg</file>
+        <file>res/sym-chevron-updown.svg</file>
+        <file>res/sym-checkmark.svg</file>
         <file>res/question_mark.svg</file>
         <file>res/moonlight.svg</file>
         <file>res/moonlight-macos.svg</file>

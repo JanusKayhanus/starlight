@@ -44,6 +44,15 @@
 #include <QGuiApplication>
 #include <QCursor>
 #include <QScreen>
+#include <QDir>
+#include <QTimer>
+#include <QUrl>
+#include "path.h"
+
+#ifdef Q_OS_DARWIN
+#include "gui/macoswindow.h"
+#include <SDL_syswm.h>
+#endif
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QQuickOpenGLUtils>
@@ -584,6 +593,11 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
       m_FlushingWindowEventsRef(0),
       m_ShouldExit(false),
       m_AsyncConnectionSuccess(false),
+      m_DeferStreamStart(false),
+      m_StreamStarted(false),
+      m_StreamWindowRevealPending(false),
+      m_DeferFullScreenUntilReveal(false),
+      m_RevealTimeoutTimer(0),
       m_PortTestResults(0),
       m_OpusDecoder(nullptr),
       m_AudioRenderer(nullptr),
@@ -1295,6 +1309,18 @@ private:
         // Finish cleanup of the connection state
         LiStopConnection();
 
+        // Save where this session left off, for the next launch transition
+        if (!m_Session->m_LastFrameSnapshot.isNull()) {
+            QString path = m_Session->snapshotFilePath();
+            QDir().mkpath(QFileInfo(path).absolutePath());
+            if (!m_Session->m_LastFrameSnapshot.save(path, "JPG", 85)) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "Unable to save session snapshot to %s",
+                            qPrintable(path));
+            }
+            m_Session->m_LastFrameSnapshot = QImage();
+        }
+
 #ifdef Q_OS_DARWIN
         // Restore AWDL now that we're done streaming
         AwdlSuppressor::setSuppressed(false);
@@ -1777,9 +1803,118 @@ void Session::start()
 
     // Kick off the async connection thread then return to the caller to pump the event loop
     auto thread = new AsyncConnectionStartThread(this);
-    QObject::connect(thread, &QThread::finished, this, &Session::exec);
+    QObject::connect(thread, &QThread::finished, this, &Session::onConnectionAttemptFinished);
     QObject::connect(thread, &QThread::finished, thread, &QThread::deleteLater);
     thread->start();
+}
+
+void Session::onConnectionAttemptFinished()
+{
+    if (m_AsyncConnectionSuccess && m_DeferStreamStart) {
+        // Let the UI finish its transition first. Video received in the
+        // meantime is dropped, and we request an IDR frame once the decoder
+        // is ready, so nothing is lost but a fraction of a second.
+        emit readyToStream();
+
+        // Don't hang if the UI never tells us to go ahead
+        QTimer::singleShot(3000, this, &Session::beginStreaming);
+    }
+    else {
+        beginStreaming();
+    }
+}
+
+void Session::beginStreaming()
+{
+    if (m_StreamStarted) {
+        return;
+    }
+
+    m_StreamStarted = true;
+
+    // exec() runs the stream until it ends, so start it from the event loop
+    // rather than from inside whatever called us (like a QML signal handler)
+    QTimer::singleShot(0, this, &Session::exec);
+}
+
+QString Session::snapshotFilePath() const
+{
+    return Path::getCacheFileInfo(QString("snapshots/%1-%2.jpg").arg(m_Computer->uuid).arg(m_App.id)).absoluteFilePath();
+}
+
+QString Session::snapshotUrl() const
+{
+    QFileInfo info(snapshotFilePath());
+    if (!info.exists()) {
+        return QString();
+    }
+
+    // Include the modification time so QML doesn't show a stale cached image
+    QUrl url = QUrl::fromLocalFile(info.absoluteFilePath());
+    url.setQuery(QString("t=%1").arg(info.lastModified().toMSecsSinceEpoch()));
+    return url.toString();
+}
+
+QDateTime Session::snapshotTime() const
+{
+    QFileInfo info(snapshotFilePath());
+    return info.exists() ? info.lastModified() : QDateTime();
+}
+
+#ifdef Q_OS_DARWIN
+static void* getCocoaWindow(SDL_Window* window)
+{
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (window != nullptr && SDL_GetWindowWMInfo(window, &info) && info.subsystem == SDL_SYSWM_COCOA) {
+        return (void*)info.info.cocoa.window;
+    }
+    return nullptr;
+}
+#endif
+
+static Uint32 revealTimeoutCallback(Uint32, void*)
+{
+    // Show the stream window anyway if no frame arrives in time
+    SDL_Event event = {};
+    event.type = SDL_USEREVENT;
+    event.user.code = SDL_CODE_FIRST_FRAME_RENDERED;
+    SDL_PushEvent(&event);
+    return 0;
+}
+
+void Session::revealStreamWindow()
+{
+    if (!m_StreamWindowRevealPending) {
+        return;
+    }
+    m_StreamWindowRevealPending = false;
+
+    if (m_RevealTimeoutTimer != 0) {
+        SDL_RemoveTimer(m_RevealTimeoutTimer);
+        m_RevealTimeoutTimer = 0;
+    }
+
+#ifdef Q_OS_DARWIN
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Revealing stream window");
+
+    // A window that's already full screen fades in over the UI. Otherwise it's
+    // on top of the UI at the same frame, so it can simply appear.
+    bool fade = m_IsFullScreen && !m_DeferFullScreenUntilReveal;
+    QQuickWindow* qtWindow = m_QtWindow;
+    MacOSWindow::revealStreamWindow(getCocoaWindow(m_Window), fade ? 0.25 : 0.0, [qtWindow]() {
+        if (qtWindow != nullptr) {
+            qtWindow->hide();
+        }
+    });
+
+    // Full screen in its own Space zooms out of the window, so it looks like
+    // the launcher window itself going full screen
+    if (m_DeferFullScreenUntilReveal) {
+        m_DeferFullScreenUntilReveal = false;
+        SDL_SetWindowFullscreen(m_Window, m_FullScreenFlag);
+    }
+#endif
 }
 
 void Session::interrupt()
@@ -1920,8 +2055,21 @@ void Session::exec()
     // for if/when we enter full-screen mode.
     updateOptimalWindowDisplayMode();
 
+#ifdef Q_OS_DARWIN
+    // When the UI played a launch transition, the stream window takes over
+    // the UI window seamlessly: it starts exactly where the UI window is and
+    // stays invisible until the first frame has been rendered.
+    m_StreamWindowRevealPending = m_DeferStreamStart && m_QtWindow != nullptr && m_QtWindow->isVisible();
+    if (m_StreamWindowRevealPending) {
+        bool fullScreenSpaces = m_IsFullScreen && SDL_GetHintBoolean(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, SDL_FALSE);
+        m_DeferFullScreenUntilReveal = fullScreenSpaces;
+        MacOSWindow::prepareStreamWindow(getCocoaWindow(m_Window), m_QtWindow, !m_IsFullScreen || fullScreenSpaces);
+        m_RevealTimeoutTimer = SDL_AddTimer(4000, revealTimeoutCallback, nullptr);
+    }
+#endif
+
     // Enter full screen if requested
-    if (m_IsFullScreen) {
+    if (m_IsFullScreen && !m_DeferFullScreenUntilReveal) {
         SDL_SetWindowFullscreen(m_Window, m_FullScreenFlag);
     }
 
@@ -2024,6 +2172,9 @@ void Session::exec()
                 if (m_VideoDecoder != nullptr) {
                     m_VideoDecoder->renderFrameOnMainThread();
                 }
+                break;
+            case SDL_CODE_FIRST_FRAME_RENDERED:
+                revealStreamWindow();
                 break;
             case SDL_CODE_FLUSH_WINDOW_EVENT_BARRIER:
                 m_FlushingWindowEventsRef--;
@@ -2350,6 +2501,10 @@ DispatchDeferredCleanup:
     // NB: This must happen before LiStopConnection() for pull-based
     // decoders.
     SDL_LockMutex(m_DecoderLock);
+    if (m_VideoDecoder != nullptr) {
+        // Keep the last frame so the next launch can show where we left off
+        m_LastFrameSnapshot = m_VideoDecoder->captureLastFrame(1600);
+    }
     delete m_VideoDecoder;
     m_VideoDecoder = nullptr;
     SDL_UnlockMutex(m_DecoderLock);
@@ -2378,6 +2533,20 @@ DispatchDeferredCleanup:
         }
 #endif
     }
+
+    if (m_RevealTimeoutTimer != 0) {
+        SDL_RemoveTimer(m_RevealTimeoutTimer);
+        m_RevealTimeoutTimer = 0;
+    }
+    m_StreamWindowRevealPending = false;
+
+#ifdef Q_OS_DARWIN
+    // Bring the UI back exactly where the stream window was
+    if (m_DeferStreamStart && m_Window != nullptr &&
+            !(SDL_GetWindowFlags(m_Window) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_MINIMIZED))) {
+        MacOSWindow::adoptStreamWindowFrame(m_QtWindow, getCocoaWindow(m_Window));
+    }
+#endif
 
     // This must be called after the decoder is deleted, because
     // the renderer may want to interact with the window

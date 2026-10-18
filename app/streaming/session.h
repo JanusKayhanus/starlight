@@ -2,6 +2,8 @@
 
 #include <QSemaphore>
 #include <QQuickWindow>
+#include <QDateTime>
+#include <QImage>
 
 #include <Limelight.h>
 #include <opus_multistream.h>
@@ -106,6 +108,18 @@ public:
     Q_INVOKABLE void interrupt();
     Q_PROPERTY(QStringList launchWarnings MEMBER m_LaunchWarnings NOTIFY launchWarningsChanged);
 
+    // When set, the session waits after connecting until beginStreaming() is
+    // called, so the UI can finish its launch transition before the stream
+    // window takes over the main thread
+    Q_PROPERTY(bool deferStreamStart MEMBER m_DeferStreamStart);
+    Q_INVOKABLE void beginStreaming();
+
+    // Image of where the last session of this app left off, if there is one
+    Q_PROPERTY(QString snapshotUrl READ snapshotUrl CONSTANT);
+    Q_PROPERTY(QDateTime snapshotTime READ snapshotTime CONSTANT);
+    QString snapshotUrl() const;
+    QDateTime snapshotTime() const;
+
     static
     void getDecoderInfo(SDL_Window* window,
                         bool& isHardwareAccelerated, bool& isFullScreenOnly,
@@ -132,6 +146,9 @@ signals:
 
     void connectionStarted();
 
+    // Emitted instead of starting the stream when deferStreamStart is set
+    void readyToStream();
+
     void displayLaunchError(QString text);
 
     void quitStarting();
@@ -145,6 +162,14 @@ signals:
 
 private:
     void exec();
+
+    void onConnectionAttemptFinished();
+
+    QString snapshotFilePath() const;
+
+    // Shows the stream window once it has something on screen, hiding the UI
+    // behind it (see prepareStreamWindow() in exec())
+    void revealStreamWindow();
 
     bool startConnectionAsync();
 
@@ -266,6 +291,14 @@ private:
     bool m_ShouldExit;
 
     bool m_AsyncConnectionSuccess;
+    bool m_DeferStreamStart;
+    bool m_StreamStarted;
+    QImage m_LastFrameSnapshot;
+
+    // Seamless handoff from the launcher window to the stream window
+    bool m_StreamWindowRevealPending;
+    bool m_DeferFullScreenUntilReveal;
+    SDL_TimerID m_RevealTimeoutTimer;
     int m_PortTestResults;
 
     int m_ActiveVideoFormat;
