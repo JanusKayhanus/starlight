@@ -1166,6 +1166,12 @@ bool Session::validateLaunch(SDL_Window* testWindow)
                 emitLaunchWarning(tr("Your host PC doesn't support YUV 4:4:4 streaming for selected video codec."));
             }
             else if (m_Preferences->videoDecoderSelection != StreamingPreferences::VDS_FORCE_SOFTWARE) {
+                // If the client can't hardware-decode any of the 4:4:4 profiles for
+                // this codec, drop them so we fall back to 4:2:0 and keep hardware
+                // decoding. Software decoding of 4:4:4 is unusably slow at high
+                // resolutions/frame rates, so we no longer silently do that even
+                // when the decoder selection is Automatic. Users who really want
+                // software 4:4:4 decoding can force it via the decoder setting.
                 while (!m_SupportedVideoFormats.isEmpty() &&
                        (m_SupportedVideoFormats.front() & VIDEO_FORMAT_MASK_YUV444) &&
                        getDecoderAvailability(testWindow,
@@ -1174,17 +1180,11 @@ bool Session::validateLaunch(SDL_Window* testWindow)
                                               m_StreamConfig.width,
                                               m_StreamConfig.height,
                                               m_StreamConfig.fps) != DecoderAvailability::Hardware) {
-                    if (m_Preferences->videoDecoderSelection == StreamingPreferences::VDS_FORCE_HARDWARE) {
-                        m_SupportedVideoFormats.removeFirst();
-                    }
-                    else {
-                        emitLaunchWarning(tr("Using software decoding due to your selection to force YUV 4:4:4 without GPU support. This may cause poor streaming performance."));
-                        break;
-                    }
+                    m_SupportedVideoFormats.removeFirst();
                 }
                 if (!m_SupportedVideoFormats.isEmpty() &&
                     !(m_SupportedVideoFormats.front() & VIDEO_FORMAT_MASK_YUV444)) {
-                    emitLaunchWarning(tr("This PC's GPU doesn't support YUV 4:4:4 decoding for selected video codec."));
+                    emitLaunchWarning(tr("Your GPU doesn't support YUV 4:4:4 hardware decoding for the selected video codec. Falling back to 4:2:0."));
                 }
             }
         }

@@ -568,8 +568,12 @@ public:
         [commandBuffer presentDrawable:drawable];
         [commandBuffer commit];
 
-        // Wait for the command buffer to complete and free our CVMetalTextureCache references
-        [commandBuffer waitUntilCompleted];
+        // Don't block waiting for completion here. This code runs on the
+        // CAMetalDisplayLink callback (the main thread), and blocking for the
+        // entire GPU frame stalls input handling and event processing. The
+        // completion handler above already releases the CVMetalTextureCache
+        // references, and those references keep the decoded CVPixelBuffer alive
+        // until the GPU is done with it, so returning immediately is safe.
     }}
 
     // Caller frees frame after we return
