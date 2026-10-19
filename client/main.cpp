@@ -1,4 +1,5 @@
 #include "cli.h"
+#include "hostrequests.h"
 #include "path.h"
 #include "serverinfo.h"
 #include "settings.h"
@@ -16,9 +17,10 @@ int main(int argc, char** argv)
 
     // Handle the "pair" subcommand before anything else so it can run against a
     // host that isn't paired (or reachable) yet.
-    int pairExitCode = 0;
-    if (handlePairCommandIfPresent(argc, argv, pairExitCode)) {
-        return pairExitCode;
+    int commandExitCode = 0;
+    if (handlePairCommandIfPresent(argc, argv, commandExitCode) ||
+            handleHostCommandIfPresent(argc, argv, commandExitCode)) {
+        return commandExitCode;
     }
 
     // Parse the command line before doing any network or SDL work so that
@@ -26,8 +28,9 @@ int main(int argc, char** argv)
     StreamingPreferences* preferences = StreamingPreferences::get();
 
     std::string error;
+    StreamTarget target;
     bool shouldExit = false;
-    if (!applyCommandLineOverrides(argc, argv, preferences, shouldExit, error)) {
+    if (!applyCommandLineOverrides(argc, argv, preferences, target, shouldExit, error)) {
         fprintf(stderr, "%s\n", error.c_str());
         return 1;
     }
@@ -37,7 +40,8 @@ int main(int argc, char** argv)
 
     HostConfig host;
     ClientConfig client;
-    if (!loadMoonlightSettings(host, client, error)) {
+    if (!loadClientIdentity(client, error) ||
+            !selectSavedHost(loadSavedHosts(), target.host, host, error)) {
         fprintf(stderr, "Settings error: %s\n", error.c_str());
         return 1;
     }
@@ -73,6 +77,10 @@ int main(int argc, char** argv)
 
     if (!fetchServerInfo(host, client, error)) {
         fprintf(stderr, "serverinfo failed: %s\n", error.c_str());
+        if (host.macAddress.size() == 6) {
+            fprintf(stderr, "If %s is asleep, wake it with: Moonlight wake --host \"%s\"\n",
+                    host.name.c_str(), host.name.c_str());
+        }
         SDL_Quit();
         return 1;
     }
@@ -82,6 +90,24 @@ int main(int argc, char** argv)
                 host.name.c_str(), host.address.c_str());
         SDL_Quit();
         return 1;
+    }
+
+    // Refresh the app list so any of the host's apps can be streamed, not
+    // just Desktop. If that fails, the saved list still works.
+    if (!fetchAppList(host, client, error)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Unable to fetch the app list, using the saved one: %s", error.c_str());
+    }
+    saveHostDetails(host);
+
+    if (!selectApp(host, target.app, error)) {
+        fprintf(stderr, "%s\n", error.c_str());
+        SDL_Quit();
+        return 1;
+    }
+
+    if (!target.host.empty()) {
+        rememberLastHost(host);
     }
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,

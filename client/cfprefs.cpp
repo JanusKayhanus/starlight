@@ -42,12 +42,9 @@ std::string cfStringToStd(CFStringRef value)
     return std::string(buffer.data());
 }
 
-void setPreference(const std::string& key, CFPropertyListRef value)
+// A null `value` deletes the key.
+void writePreference(const std::string& key, CFPropertyListRef value)
 {
-    if (value == nullptr) {
-        return;
-    }
-
     CFStringRef keyString = CFStringCreateWithCString(kCFAllocatorDefault, key.c_str(),
                                                       kCFStringEncodingUTF8);
     CFStringRef domain = CFStringCreateWithCString(kCFAllocatorDefault, kDomain,
@@ -62,6 +59,13 @@ void setPreference(const std::string& key, CFPropertyListRef value)
     }
     if (keyString != nullptr) {
         CFRelease(keyString);
+    }
+}
+
+void setPreference(const std::string& key, CFPropertyListRef value)
+{
+    if (value != nullptr) {
+        writePreference(key, value);
     }
 }
 
@@ -178,6 +182,11 @@ void setData(const std::string& key, const std::string& value)
     if (data != nullptr) {
         CFRelease(data);
     }
+}
+
+void remove(const std::string& key)
+{
+    writePreference(key, nullptr);
 }
 
 } // namespace CfPrefs

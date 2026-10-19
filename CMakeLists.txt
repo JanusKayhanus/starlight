@@ -63,12 +63,14 @@ add_executable(Moonlight MACOSX_BUNDLE
     client/main.cpp
     client/cli.cpp
     client/cfprefs.cpp
+    client/hostrequests.cpp
     client/http.cpp
     client/identity.cpp
     client/pairing.cpp
     client/path.cpp
     client/serverinfo.cpp
     client/settings.cpp
+    client/wol.cpp
     client/xml.cpp
     client/settings/mappingmanager.cpp
     client/settings/streamingpreferences.cpp

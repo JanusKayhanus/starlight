@@ -7,6 +7,7 @@
 
 #include <Limelight.h>
 
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -31,6 +32,27 @@ std::string randomUuidHex()
         result += k_Hex[bytes[i] & 0xF];
     }
     return result;
+}
+
+// Parses "aa:bb:cc:dd:ee:ff". Returns false for anything else, including the
+// all-zero address hosts send when they won't reveal theirs.
+bool parseMacAddress(const std::string& text, std::vector<uint8_t>& mac)
+{
+    unsigned int octets[6];
+    char trailing;
+    if (sscanf(text.c_str(), "%2x:%2x:%2x:%2x:%2x:%2x%c",
+               &octets[0], &octets[1], &octets[2], &octets[3], &octets[4], &octets[5],
+               &trailing) != 6) {
+        return false;
+    }
+
+    mac.assign(octets, octets + 6);
+    for (uint8_t octet : mac) {
+        if (octet != 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool endsWith(const std::string& value, const std::string& suffix)
@@ -141,13 +163,25 @@ bool isGfeVersionSupported(const std::string& gfeVersion)
 
 } // namespace
 
-bool fetchServerInfo(HostConfig& host, const ClientConfig& client, std::string& error)
+std::string clientRequestQuery(const ClientConfig& client)
 {
-    std::string path = "/serverinfo?uniqueid=" + client.uniqueId + "&uuid=" + randomUuidHex();
+    return "uniqueid=" + client.uniqueId + "&uuid=" + randomUuidHex();
+}
+
+bool verifyHostResponse(const std::string& xml, std::string& error)
+{
+    return verifyResponseStatus(xml, error);
+}
+
+bool fetchServerInfo(HostConfig& host, const ClientConfig& client, std::string& error,
+                     const CancellationToken* cancel)
+{
+    std::string path = "/serverinfo?" + clientRequestQuery(client);
 
     // Start over HTTP, which also tells us the HTTPS port.
     std::string response;
-    if (!httpGet(host.address, host.httpPort, path, response, error) ||
+    if (!httpGet(host.address, host.httpPort, path, response, error,
+                 kDefaultHttpTimeoutSeconds, cancel) ||
             !verifyResponseStatus(response, error)) {
         return false;
     }
@@ -166,7 +200,7 @@ bool fetchServerInfo(HostConfig& host, const ClientConfig& client, std::string& 
         bool ok = httpsGet(host.address, host.httpsPort, path,
                            client.certPem, client.keyPem, host.serverCertPem,
                            httpsResponse, httpsError,
-                           kDefaultHttpTimeoutSeconds, &httpStatusCode);
+                           kDefaultHttpTimeoutSeconds, &httpStatusCode, cancel);
         if (ok && responseStatusCode(httpsResponse) == 200) {
             response = httpsResponse;
         }
@@ -196,6 +230,13 @@ bool fetchServerInfo(HostConfig& host, const ClientConfig& client, std::string& 
         host.name = "UNKNOWN";
     }
     host.uuid = xmlTag(response, "uniqueid");
+
+    // Hosts only report a real MAC address to paired clients over HTTPS;
+    // otherwise they send all zeros, so keep the one we have.
+    std::vector<uint8_t> macAddress;
+    if (parseMacAddress(xmlTag(response, "mac"), macAddress)) {
+        host.macAddress = macAddress;
+    }
 
     std::string codecSupport = xmlTag(response, "ServerCodecModeSupport");
     if (!codecSupport.empty()) {

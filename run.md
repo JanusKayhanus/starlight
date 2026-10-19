@@ -98,6 +98,8 @@ stored host certificate.
 
 | Flag | Meaning |
 | --- | --- |
+| `--host <host>` | Host to stream from: name, address or UUID. Default: the host last chosen in Moonlight (`launcher.lastHostUuid`), else the first saved one |
+| `--app <app>` | App to stream: name (any case) or ID. Default: Desktop |
 | `--720` / `--1080` / `--1440` / `--4K` | Standard resolution |
 | `--resolution <W>x<H>` | Custom resolution |
 | `--fps <10–480>` | Frame rate |
@@ -110,7 +112,30 @@ stored host certificate.
 | `--help` | Usage |
 
 If you change only resolution/FPS, the default bitrate is recomputed unless
-`--bitrate` is also given.
+`--bitrate` is also given. Choosing a host with `--host` makes it the default
+for later runs.
+
+### Hosts and apps
+
+```sh
+# List the saved hosts (the default is marked)
+./build/Moonlight.app/Contents/MacOS/Moonlight hosts
+
+# List a host's apps with their IDs (refreshes the saved list if it's online)
+./build/Moonlight.app/Contents/MacOS/Moonlight apps --host DESKTOP-BUO46UK
+
+# Stream an app other than Desktop
+./build/Moonlight.app/Contents/MacOS/Moonlight --app "Steam Big Picture"
+
+# Wake a sleeping host (needs its MAC address, saved after a connection)
+./build/Moonlight.app/Contents/MacOS/Moonlight wake --host DESKTOP-BUO46UK
+
+# Quit whatever app the host is running
+./build/Moonlight.app/Contents/MacOS/Moonlight quit
+```
+
+Every stream refreshes the host's app list and MAC address in the saved
+preferences, in the same `hosts.N.*` layout the Qt build used.
 
 ---
 
@@ -317,6 +342,12 @@ End a stale/stuck stream on the host (needed when the host is stuck at a
 previous resolution/refresh rate):
 
 ```sh
+./build/Moonlight.app/Contents/MacOS/Moonlight quit
+```
+
+Or by hand, without the client:
+
+```sh
 python3 - <<'PY'
 import plistlib, subprocess
 pl = plistlib.loads(subprocess.check_output(['defaults','export','com.moonlight-stream.Moonlight','-']))
@@ -355,12 +386,12 @@ running.
 - Audio follows `hostaudio`. With `hostaudio` enabled the host plays audio
   locally, so the client intentionally receives no audio to render. If no audio
   arrives with `hostaudio` disabled, check the host's audio capture device.
-- If a stream ends but the host keeps the Desktop app running, the next launch
-  uses `/resume`, which keeps the host's existing resolution/refresh rate. Use
-  the cancel command in section 8 (or exit with `Ctrl+Alt+Shift+E`) to force a
+- If a stream ends but the host keeps the app running, the next launch of that
+  app uses `/resume`, which keeps the host's existing resolution/refresh rate. Use
+  `Moonlight quit` (section 8, or exit with `Ctrl+Alt+Shift+E`) to force a
   fresh launch.
 - If a different app is running on the host, the client quits it and then
-  launches Desktop. If the host refuses (for example, the app was started by
+  launches the chosen app. If the host refuses (for example, the app was started by
   another client), the launch fails with an error.
 - The client checks its pairing over HTTPS before streaming. If the host no
   longer trusts it, the launch fails and asks you to run `Moonlight pair`.

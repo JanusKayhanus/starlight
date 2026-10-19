@@ -18,4 +18,7 @@ void setInt(const std::string& key, int value);
 void setBool(const std::string& key, bool value);
 void setData(const std::string& key, const std::string& value);
 
+// Deletes `key`, if it exists.
+void remove(const std::string& key);
+
 } // namespace CfPrefs

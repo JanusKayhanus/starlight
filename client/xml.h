@@ -9,3 +9,7 @@
 std::string xmlTag(const std::string& xml, const char* tag);
 std::string xmlAttribute(const std::string& xml, const char* name);
 std::vector<std::string> xmlTags(const std::string& xml, const char* tag);
+
+// Decodes the predefined entities (&amp; &lt; &gt; &quot; &apos;) and
+// numeric character references in element text.
+std::string xmlUnescape(const std::string& text);
