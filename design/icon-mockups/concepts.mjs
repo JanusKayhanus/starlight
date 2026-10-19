@@ -27,6 +27,12 @@ const rayGrad = (id, color, op = 0.7, cx = C, cy = C, r = 420) =>
 const glow = (id, color, op = 1) =>
   `<radialGradient id="${id}"><stop offset="0" stop-color="${color}" stop-opacity="${op}"/><stop offset=".45" stop-color="${color}" stop-opacity="${op * 0.4}"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></radialGradient>`;
 
+// Orbit's midnight background: deep indigo gradient with a scatter of tiny stars.
+const midnightDefs = `<linearGradient id="bg" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0" stop-color="#34305A"/><stop offset="1" stop-color="#0F1128"/></linearGradient>`;
+const midnightSky = (stars = [[210, 230, 3], [250, 820, 2.4], [840, 250, 2.8], [770, 170, 1.8], [180, 610, 2], [880, 560, 1.6], [640, 860, 2.2], [380, 160, 1.6]]) =>
+  `<rect width="1024" height="1024" fill="url(#bg)"/>` +
+  stars.map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="#FFF3D0" opacity=".85"/>`).join('');
+
 // 1 — Radiance: a plump golden glass star over a frosted halo-star, sun-rays fanning out behind.
 export function radiance() {
   const cy = 528, d = star(C, cy, 262, 134, 34);
@@ -96,12 +102,11 @@ export function orbit() {
   return iconFrame({
     rim: 0.45, sheen: 0.14,
     defs: s.defs + ringFront.defs + ringBack.defs + `<radialGradient id="spec" cx=".4" cy=".32" r=".32"><stop offset="0" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>` + glow('core', '#FFD983', 0.8) + rayGrad('rg', '#FFD77A', 0.85, C, cy, 420) + `
-      <linearGradient id="bg" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0" stop-color="#34305A"/><stop offset="1" stop-color="#0F1128"/></linearGradient>
+      ${midnightDefs}
       <linearGradient id="ringBack" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#E9AE48" stop-opacity=".85"/><stop offset=".5" stop-color="#A9721F" stop-opacity=".75"/><stop offset="1" stop-color="#E9AE48" stop-opacity=".85"/></linearGradient>
       <clipPath id="frontHalf"><rect x="0" y="${cy}" width="1024" height="600"/></clipPath>
       <clipPath id="backHalf"><rect x="0" y="0" width="1024" height="${cy}"/></clipPath>`,
-    bg: `<rect width="1024" height="1024" fill="url(#bg)"/>
-      ${[[210, 230, 3], [250, 820, 2.4], [840, 250, 2.8], [770, 170, 1.8], [180, 610, 2], [880, 560, 1.6], [640, 860, 2.2], [380, 160, 1.6]].map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="#FFF3D0" opacity=".85"/>`).join('')}`,
+    bg: midnightSky(),
     content: `
       <circle cx="${C}" cy="${cy}" r="400" fill="url(#core)" opacity=".55"/>
       <path d="${rays(C, cy, 16, 400, 290, 4, 2.4, -90)}" fill="url(#rg)" filter="url(#b4)"/>
@@ -113,31 +118,43 @@ export function orbit() {
 }
 
 // 4 — Flare: tall sparkle with an anamorphic streak and overlapping translucent glass discs.
-export function flare() {
+export function flare({ night = false } = {}) {
   const cy = 500, main = sparkle(C, cy, 200, 300, 0.13);
-  const g = glass('m', main, { stops: [[0, '#FFFDF4'], [0.4, '#FFE7A4'], [1, '#E7A83C']], shadowOp: 0.3, hiOp: 0.95 });
+  const g = glass('m', main, { stops: [[0, '#FFFDF4'], [0.4, '#FFE7A4'], [1, '#E7A83C']], hiOp: 0.95,
+    ...(night ? { shadow: '#000', shadowOp: 0.5, edge: '#FFF2C8' } : { shadowOp: 0.3 }) });
   const disc = (id, cx, cyy, r, a, b) => `
     <radialGradient id="${id}" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="${a}" stop-opacity=".6"/><stop offset="1" stop-color="${b}" stop-opacity=".55"/></radialGradient>`;
-  const discUse = (id, cx, cyy, r) => `
+  // On the night sky the discs become lit bokeh: a faint gold body brightening toward a glowing rim.
+  const discUse = night
+    ? (id, cx, cyy, r) => `
+    <circle cx="${cx}" cy="${cyy}" r="${r}" fill="url(#bokeh)"/>
+    <circle cx="${cx}" cy="${cyy}" r="${r - 3}" fill="none" stroke="#FFD27A" stroke-opacity=".55" stroke-width="8" filter="url(#b4)"/>
+    <circle cx="${cx}" cy="${cyy}" r="${r - 2}" fill="none" stroke="url(#discRim)" stroke-width="3"/>`
+    : (id, cx, cyy, r) => `
     <circle cx="${cx}" cy="${cyy + 10}" r="${r}" fill="#9a640f" opacity=".12" filter="url(#b24)"/>
     <circle cx="${cx}" cy="${cyy}" r="${r}" fill="url(#${id})" filter="url(#innerGlow)"/>
     <circle cx="${cx}" cy="${cyy}" r="${r - 2}" fill="none" stroke="url(#discRim)" stroke-width="4"/>`;
   return iconFrame({
-    defs: g.defs + glow('core', '#FFF6D6') + disc('d1', 0, 0, 0, '#FFE3A0', '#E39A2E') + disc('d2', 0, 0, 0, '#FFF0C8', '#EDAE45') + disc('d3', 0, 0, 0, '#FFE9B4', '#E8A23A') + `
+    ...(night ? { rim: 0.45, sheen: 0.14 } : {}),
+    defs: g.defs + (night ? glow('core', '#FFD983', 0.5) + glow('core2', '#FFF6D6', 0.9) : glow('core', '#FFF6D6')) + (night
+      ? `<radialGradient id="bokeh"><stop offset="0" stop-color="#FFD983" stop-opacity=".1"/><stop offset=".75" stop-color="#FFD27A" stop-opacity=".2"/><stop offset="1" stop-color="#FFE3A6" stop-opacity=".42"/></radialGradient>`
+      : disc('d1', 0, 0, 0, '#FFE3A0', '#E39A2E') + disc('d2', 0, 0, 0, '#FFF0C8', '#EDAE45') + disc('d3', 0, 0, 0, '#FFE9B4', '#E8A23A')) + `
       <linearGradient id="discRim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".5" stop-color="#fff" stop-opacity=".1"/><stop offset="1" stop-color="#fff" stop-opacity=".6"/></linearGradient>
-      <linearGradient id="bg" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="#FFF8E9"/><stop offset=".7" stop-color="#F5E0B4"/><stop offset="1" stop-color="#EBC88C"/></linearGradient>
+      ${night ? midnightDefs : `<linearGradient id="bg" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="#FFF8E9"/><stop offset=".7" stop-color="#F5E0B4"/><stop offset="1" stop-color="#EBC88C"/></linearGradient>`}
       <linearGradient id="streak" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>`,
-    bg: `<rect width="1024" height="1024" fill="url(#bg)"/>`,
+    bg: night ? midnightSky([[200, 220, 3], [840, 240, 2.6], [160, 560, 2], [880, 520, 1.8], [620, 880, 2.2], [400, 150, 1.6], [860, 860, 2]]) : `<rect width="1024" height="1024" fill="url(#bg)"/>`,
     content: `
-      ${discUse('d1', 350, 700, 140)}${discUse('d2', 480, 760, 95)}${discUse('d3', 700, 320, 90)}
-      <circle cx="${C}" cy="${cy}" r="330" fill="url(#core)"/>
+      ${night ? '' : discUse('d1', 350, 700, 140) + discUse('d2', 480, 760, 95) + discUse('d3', 700, 320, 90)}
+      <circle cx="${C}" cy="${cy}" r="${night ? 360 : 330}" fill="url(#core)"/>
+      ${night ? discUse('d1', 350, 700, 140) + discUse('d2', 480, 760, 95) + discUse('d3', 700, 320, 90) : ''}
+      ${night ? `<circle cx="${C}" cy="${cy}" r="170" fill="url(#core2)"/>` : ''}
       <path d="${sparkle(C, cy, 140, 140, 0.18)}" transform="rotate(45 ${C} ${cy})" fill="#F0B94C" opacity=".6" filter="url(#b4)"/>
       ${g.body}
       <rect x="130" y="${cy - 6}" width="764" height="12" rx="6" fill="url(#streak)" filter="url(#b4)"/>
       <rect x="230" y="${cy - 2}" width="564" height="4" rx="2" fill="url(#streak)"/>
       <circle cx="${C}" cy="${cy}" r="46" fill="#fff" filter="url(#b10)"/>
-      <path d="${sparkle(740, 715, 52, 70, 0.16)}" fill="#fff" opacity=".95" filter="url(#innerGlow)"/>
-      <path d="${sparkle(290, 285, 32, 44, 0.16)}" fill="#fff" opacity=".85"/>`,
+      <path d="${sparkle(740, 715, 52, 70, 0.16)}" fill="${night ? '#FFF3D0' : '#fff'}" opacity=".95" filter="url(#innerGlow)"/>
+      <path d="${sparkle(290, 285, 32, 44, 0.16)}" fill="${night ? '#FFF3D0' : '#fff'}" opacity=".85"/>`,
   });
 }
 
@@ -161,4 +178,7 @@ export function layers() {
   });
 }
 
-export const all = { radiance, twin, orbit, flare, layers };
+// 4b — Flare Night: Flare on Orbit's midnight sky.
+export const flareNight = () => flare({ night: true });
+
+export const all = { radiance, twin, orbit, flare, flareNight, layers };
