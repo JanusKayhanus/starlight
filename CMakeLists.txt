@@ -26,6 +26,7 @@ add_executable(Moonlight MACOSX_BUNDLE
     client/settings/mappingmanager.cpp
     client/settings/streamingpreferences.cpp
     client/streaming/awdlsuppressor.cpp
+    client/streaming/macoswindowinfo.mm
     client/streaming/session.cpp
     client/streaming/streamutils.cpp
     client/streaming/audio/audio.cpp

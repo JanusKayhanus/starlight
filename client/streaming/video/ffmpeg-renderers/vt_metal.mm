@@ -194,6 +194,11 @@ public:
         m_LastDrawableWidth = drawableWidth;
         m_LastDrawableHeight = drawableHeight;
 
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Video region: frame %dx%d -> drawable %dx%d, dst %dx%d at %d,%d",
+                    frame->width, frame->height, drawableWidth, drawableHeight,
+                    dst.w, dst.h, dst.x, dst.y);
+
         return true;
     }
 

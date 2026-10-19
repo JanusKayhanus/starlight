@@ -95,6 +95,12 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
         }
         break;
 
+    case KeyComboCycleDisplay:
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Detected cycle display combo");
+        Session::get()->cycleDisplay();
+        break;
+
     case KeyComboToggleMinimize:
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "Detected minimize combo");

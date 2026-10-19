@@ -75,16 +75,43 @@ Saved preferences are the defaults; these options override them per run:
 | `--yuv444`, `--no-yuv444` | Enable or disable YUV 4:4:4 |
 | `--video-codec <codec>` | `auto`, `h264`, `hevc`, or `av1` |
 | `--display-mode <mode>` | `fullscreen`, `borderless`, or `windowed` |
+| `--display <index>` | Start the stream on this display (0-based) |
 | `--help` | Show usage |
 
 When only the resolution or frame rate is changed, the default bitrate is
 recomputed using the original formula (unless `--bitrate` is also given).
 
-Exit the stream with **Cmd+Q** or **Ctrl+Alt+Shift+Q**.
+## Controls
+
+All shortcuts use **Ctrl+Alt+Shift**:
+
+| Keys | Action |
+| --- | --- |
+| `Q` | Quit the stream |
+| `E` | Quit the stream and the host app |
+| `X` | Toggle fullscreen |
+| `N` | Move the stream window to the next display |
+| `S` | Toggle the performance overlay |
+| `M` | Toggle remote-desktop mouse mode |
+| `C` | Toggle cursor visibility |
+| `D` | Minimize |
+| `V` | Paste clipboard text to the host |
+| `L` | Toggle pointer region lock |
+| `K` | Toggle keyboard grab |
+| `Z` | Release input capture |
+
+Cmd+Q also exits the stream.
 
 ## Notes
 
-- The performance overlay is toggled with **Ctrl+Alt+Shift+S**.
+- Fullscreen streaming uses a borderless window that covers the entire
+  display (including the menu bar area) and remains a normal managed window,
+  so it appears in Mission Control and can be moved between displays. Use
+  **Ctrl+Alt+Shift+N** to move it directly, or `--display` to choose which
+  display it opens on.
+- Video is scaled to fit without changing its aspect ratio. A 16:10 stream
+  (for example 3456x2160) shows side bars on a 16:9 display such as the M27P;
+  stream at 3840x2160 (or 5120x2880) for a full-bleed 16:9 picture.
 - Audio follows the saved "Play audio on host" preference. With that option
   enabled the host plays audio locally, so this client intentionally receives
   no audio to render. If the host sends no audio even with client playback

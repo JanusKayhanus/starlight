@@ -24,6 +24,7 @@ void printUsage()
         "  --yuv444 / --no-yuv444           Enable or disable YUV 4:4:4\n"
         "  --video-codec <codec>            auto, h264, hevc, or av1\n"
         "  --display-mode <mode>            fullscreen, borderless, or windowed\n"
+        "  --display <index>                Start the stream on this display\n"
         "  --help                           Show this help\n");
 }
 
@@ -171,6 +172,19 @@ bool applyCommandLineOverrides(int argc, char** argv,
                 error = "Invalid video codec: " + value;
                 return false;
             }
+        }
+        else if (arg == "--display") {
+            std::string value = nextValue("--display");
+            if (value.empty()) {
+                return false;
+            }
+
+            int display = atoi(value.c_str());
+            if (display < 0) {
+                error = "Display index must be zero or greater";
+                return false;
+            }
+            preferences->startDisplay = display;
         }
         else if (arg == "--display-mode") {
             std::string value = nextValue("--display-mode");

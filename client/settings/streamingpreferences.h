@@ -115,6 +115,10 @@ public:
     RendererSelection rendererSelection;
     FrameLatencyMode frameLatencyMode;
 
+    // Runtime-only: display index to start the stream on (-1 = main display).
+    // Not persisted; set by the --display command line option.
+    int startDisplay;
+
 private:
     StreamingPreferences();
 };

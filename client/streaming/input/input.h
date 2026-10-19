@@ -171,6 +171,7 @@ private:
         KeyComboTogglePointerRegionLock,
         KeyComboQuitAndExit,
         KeyComboToggleKeyboardGrab,
+        KeyComboCycleDisplay,
         KeyComboMax
     };
 

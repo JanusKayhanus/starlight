@@ -134,6 +134,11 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
     m_SpecialKeyCombos[KeyComboToggleKeyboardGrab].scanCode = SDL_SCANCODE_K;
     m_SpecialKeyCombos[KeyComboToggleKeyboardGrab].enabled = true;
 
+    m_SpecialKeyCombos[KeyComboCycleDisplay].keyCombo = KeyComboCycleDisplay;
+    m_SpecialKeyCombos[KeyComboCycleDisplay].keyCode = SDLK_n;
+    m_SpecialKeyCombos[KeyComboCycleDisplay].scanCode = SDL_SCANCODE_N;
+    m_SpecialKeyCombos[KeyComboCycleDisplay].enabled = true;
+
     const char* oldIgnoreDevices = SDL_GetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES);
     const char* oldIgnoreDevicesExcept = SDL_GetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT);
     m_OldIgnoreDevices = oldIgnoreDevices != nullptr ? oldIgnoreDevices : "";

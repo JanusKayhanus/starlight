@@ -5,6 +5,7 @@
 #include "backend/richpresencemanager.h"
 #include "video/ffmpeg.h"
 #include "http.h"
+#include "macoswindowinfo.h"
 #include "utils.h"
 #include "xml.h"
 
@@ -48,6 +49,17 @@ std::vector<int> parseQuad(const std::string& version)
         start = dot + 1;
     }
     return parts;
+}
+
+// Moves a fullscreen window to new display bounds. SDL's borderless
+// fullscreen emulation mishandles SetWindowSize/SetWindowPosition while the
+// fullscreen flag is set, so leave fullscreen first and re-enter afterwards.
+void applyFullscreenGeometry(SDL_Window* window, Uint32 fullscreenFlag, const SDL_Rect& bounds)
+{
+    SDL_SetWindowFullscreen(window, 0);
+    SDL_SetWindowPosition(window, bounds.x, bounds.y);
+    SDL_SetWindowSize(window, bounds.w, bounds.h);
+    SDL_SetWindowFullscreen(window, fullscreenFlag);
 }
 
 std::string toHex(const unsigned char* data, size_t length)
@@ -506,44 +518,20 @@ Session::~Session()
 
 bool Session::initialize()
 {
-    if (getenv("I_WANT_BUGGY_FULLSCREEN") == nullptr) {
-        // If we have a notch and the user specified one of the two native display modes
-        // (notched or notchless), override the fullscreen mode to ensure it works as expected.
-        // - SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES=0 will place the video underneath the notch
-        // - SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES=1 will place the video below the notch
-        bool shouldUseFullScreenSpaces = m_Preferences->windowMode != StreamingPreferences::WM_FULLSCREEN;
-        SDL_DisplayMode desktopMode;
-        SDL_Rect safeArea;
-        for (int displayIndex = 0; StreamUtils::getNativeDesktopMode(displayIndex, &desktopMode, &safeArea); displayIndex++) {
-            // Check if this display has a notch (safeArea != desktopMode)
-            if (desktopMode.h != safeArea.h || desktopMode.w != safeArea.w) {
-                // Check if we're trying to stream at the full native resolution (including notch)
-                if (m_Preferences->width == desktopMode.w && m_Preferences->height == desktopMode.h) {
-                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                                "Overriding default fullscreen mode for native fullscreen resolution");
-                    shouldUseFullScreenSpaces = false;
-                    break;
-                }
-                else if (m_Preferences->width == safeArea.w && m_Preferences->height == safeArea.h) {
-                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                                "Overriding default fullscreen mode for safe area resolution");
-                    shouldUseFullScreenSpaces = true;
-                    break;
-                }
-            }
-        }
+    // Use a borderless fullscreen window rather than a fullscreen Space.
+    // On current macOS releases the Spaces path leaves the menu bar strip
+    // uncovered (~30 pt), which shows up as a black bar at the top of the
+    // stream. The borderless path covers the entire display; see
+    // MacOSConfigureStreamWindow() for the window level/collection behavior
+    // that keeps it visible in Mission Control.
+    SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, "0");
 
-        // Using modesetting on modern versions of macOS is extremely unreliable
-        // and leads to hangs, deadlocks, and other nasty stuff. The only time
-        // people seem to use it is to get the full screen on notched Macs,
-        // which setting SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES=1 also accomplishes
-        // with much less headache.
-        //
-        // https://github.com/moonlight-stream/moonlight-qt/issues/973
-        // https://github.com/moonlight-stream/moonlight-qt/issues/999
-        // https://github.com/moonlight-stream/moonlight-qt/issues/1211
-        // https://github.com/moonlight-stream/moonlight-qt/issues/1218
-        SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, shouldUseFullScreenSpaces ? "1" : "0");
+    // Allow experimentation with the two macOS fullscreen implementations.
+    const char* forceSpaces = getenv("MOONLIGHT_FULLSCREEN_SPACES");
+    if (forceSpaces != nullptr && *forceSpaces) {
+        SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, forceSpaces);
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Forcing SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES=%s", forceSpaces);
     }
 
     if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
@@ -1115,6 +1103,17 @@ void Session::getWindowDimensions(int& x, int& y,
         displayIndex = SDL_GetWindowDisplayIndex(m_Window);
         SDL_assert(displayIndex >= 0);
     }
+    else if (m_Preferences->startDisplay >= 0) {
+        if (m_Preferences->startDisplay < SDL_GetNumVideoDisplays()) {
+            displayIndex = m_Preferences->startDisplay;
+        }
+        else {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "Requested display %d does not exist (%d displays available); "
+                        "using the main display",
+                        m_Preferences->startDisplay, SDL_GetNumVideoDisplays());
+        }
+    }
 
     SDL_Rect usableBounds;
     if (SDL_GetDisplayUsableBounds(displayIndex, &usableBounds) == 0) {
@@ -1248,9 +1247,77 @@ void Session::updateOptimalWindowDisplayMode()
     SDL_SetWindowDisplayMode(m_Window, &bestMode);
 }
 
+void Session::fitWindowToDisplay()
+{
+    if (!m_IsFullScreen || m_Window == nullptr) {
+        return;
+    }
+
+    int displayIndex = SDL_GetWindowDisplayIndex(m_Window);
+    SDL_Rect bounds = {};
+    if (displayIndex < 0 || SDL_GetDisplayBounds(displayIndex, &bounds) != 0) {
+        return;
+    }
+
+    int currentW, currentH;
+    SDL_GetWindowSize(m_Window, &currentW, &currentH);
+    if (currentW == bounds.w && currentH == bounds.h) {
+        return;
+    }
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Fitting stream window to display %d (%dx%d at %d,%d)",
+                displayIndex, bounds.w, bounds.h, bounds.x, bounds.y);
+
+    applyFullscreenGeometry(m_Window, m_FullScreenFlag, bounds);
+
+    // Keep the borderless window managed after the move.
+    MacOSConfigureStreamWindow(m_Window, false);
+}
+
+void Session::cycleDisplay()
+{
+    int numDisplays = SDL_GetNumVideoDisplays();
+    if (m_Window == nullptr || numDisplays < 2) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Only one display is available; nothing to cycle to");
+        return;
+    }
+
+    int currentDisplay = SDL_GetWindowDisplayIndex(m_Window);
+    int nextDisplay = (currentDisplay + 1) % numDisplays;
+
+    SDL_Rect bounds = {};
+    if (SDL_GetDisplayBounds(nextDisplay, &bounds) != 0) {
+        return;
+    }
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Moving stream window to display %d (%dx%d at %d,%d)",
+                nextDisplay, bounds.w, bounds.h, bounds.x, bounds.y);
+
+    if (m_IsFullScreen) {
+        applyFullscreenGeometry(m_Window, m_FullScreenFlag, bounds);
+        MacOSConfigureStreamWindow(m_Window, false);
+    }
+    else {
+        int width, height;
+        SDL_GetWindowSize(m_Window, &width, &height);
+        if (width > bounds.w || height > bounds.h) {
+            width = bounds.w;
+            height = bounds.h;
+            SDL_SetWindowSize(m_Window, width, height);
+        }
+        SDL_SetWindowPosition(m_Window,
+                              bounds.x + (bounds.w - width) / 2,
+                              bounds.y + (bounds.h - height) / 2);
+    }
+}
+
 void Session::toggleFullscreen()
 {
     bool fullScreen = !(SDL_GetWindowFlags(m_Window) & m_FullScreenFlag);
+    m_IsFullScreen = fullScreen;
 
     // On Apple Silicon Macs, the AVSampleBufferDisplayLayer may cause WindowServer
     // to deadlock when transitioning out of fullscreen. Destroy the decoder before
@@ -1262,6 +1329,14 @@ void Session::toggleFullscreen()
 
     // Actually enter/leave fullscreen
     SDL_SetWindowFullscreen(m_Window, fullScreen ? m_FullScreenFlag : 0);
+
+    if (fullScreen) {
+        MacOSConfigureStreamWindow(m_Window, false);
+    }
+    else {
+        // Bring the menu bar and Dock back for windowed use
+        MacOSRestoreAfterStreaming();
+    }
 
     // SDL on macOS has a bug that causes the window size to be reset to crazy
     // large dimensions when exiting out of true fullscreen mode. We can work
@@ -1604,7 +1679,36 @@ void Session::exec()
 
     // Enter full screen if requested
     if (m_IsFullScreen) {
+        bool useSpaces = SDL_GetHintBoolean(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, SDL_TRUE);
+
+        // Hide the menu bar and Dock before the fullscreen transition so the
+        // window manager can use the entire display.
+        MacOSConfigureStreamWindow(m_Window, useSpaces);
+
         SDL_SetWindowFullscreen(m_Window, m_FullScreenFlag);
+    }
+
+    {
+        int wx, wy, ww, wh, pw, ph, di;
+        SDL_GetWindowPosition(m_Window, &wx, &wy);
+        SDL_GetWindowSize(m_Window, &ww, &wh);
+        SDL_GetWindowSizeInPixels(m_Window, &pw, &ph);
+        di = SDL_GetWindowDisplayIndex(m_Window);
+
+        SDL_Rect displayBounds = {};
+        SDL_Rect usableBounds = {};
+        SDL_GetDisplayBounds(di, &displayBounds);
+        SDL_GetDisplayUsableBounds(di, &usableBounds);
+
+        LogStreamWindowInfo(m_Window, "after fullscreen");
+
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Stream window: pos %dx%d, size %dx%d points, %dx%d pixels, "
+                    "display %d bounds %dx%d at %d,%d, usable %dx%d at %d,%d, flags 0x%x",
+                    wx, wy, ww, wh, pw, ph, di,
+                    displayBounds.w, displayBounds.h, displayBounds.x, displayBounds.y,
+                    usableBounds.w, usableBounds.h, usableBounds.x, usableBounds.y,
+                    SDL_GetWindowFlags(m_Window));
     }
 
     bool needsFirstEnterCapture = false;
@@ -1671,6 +1775,7 @@ void Session::exec()
             case SDL_CODE_FIRST_FRAME_RENDERED:
                 SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                             "First frame rendered");
+                LogStreamWindowInfo(m_Window, "first frame");
                 break;
             case SDL_CODE_FLUSH_WINDOW_EVENT_BARRIER:
                 m_FlushingWindowEventsRef--;
@@ -1706,6 +1811,13 @@ void Session::exec()
             break;
 
         case SDL_WINDOWEVENT:
+            // When the window is moved to another display, refit it to that
+            // display so a borderless fullscreen stream keeps covering the
+            // whole screen.
+            if (event.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) {
+                fitWindowToDisplay();
+            }
+
             // Early handling of some events
             switch (event.window.event) {
             case SDL_WINDOWEVENT_FOCUS_LOST:
@@ -2001,6 +2113,9 @@ DispatchDeferredCleanup:
     if (shouldQuit) {
         quitHostApp();
     }
+
+    // Restore the menu bar and Dock now that we're done streaming
+    MacOSRestoreAfterStreaming();
 
     // Restore AWDL now that we're done streaming
     AwdlSuppressor::setSuppressed(false);

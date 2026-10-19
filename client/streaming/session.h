@@ -157,6 +157,10 @@ private:
 
     void updateOptimalWindowDisplayMode();
 
+    void fitWindowToDisplay();
+
+    void cycleDisplay();
+
     void quitHostApp();
 
     enum class DecoderAvailability {

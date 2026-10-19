@@ -118,6 +118,8 @@ void StreamingPreferences::reload()
                                                         // Try to load from the old preference value too
                                                         static_cast<int>(CfPrefs::copyBool(SER_FULLSCREEN, true) ?
                                                                              recommendedFullScreenMode : WindowMode::WM_WINDOWED)));
+    startDisplay = -1;
+
     uiDisplayMode = static_cast<UIDisplayMode>(CfPrefs::copyInt(SER_UIDISPLAYMODE,
                                                static_cast<int>(CfPrefs::copyBool(SER_STARTWINDOWED, true) ? UIDisplayMode::UI_WINDOWED
                                                                                                                  : UIDisplayMode::UI_MAXIMIZED)));
