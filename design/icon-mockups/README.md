@@ -17,5 +17,8 @@ standard drop shadow) in cream and gold, with translucent glass layers.
 - `render.mjs`: writes `svg/` and 1024 px `png/` (needs Node and Playwright's Chromium).
 - `gallery.html`: side-by-side comparison, Dock previews and small-size ladders.
 
-The app bundle still uses `client/moonlight.icns`. To ship one of these on
-macOS, build an `.iconset` from its PNG with `sips` and run `iconutil -c icns`.
+- `make_icns.py`: packs a 1024 px PNG into a `.icns` without `iconutil`.
+
+The app bundle uses Flare Night, built with:
+
+    python3 design/icon-mockups/make_icns.py design/icon-mockups/png/flareNight.png client/starlight.icns

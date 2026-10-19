@@ -161,7 +161,7 @@ target_include_directories(MoonlightAWDLHelper PRIVATE
 
 set_target_properties(Moonlight PROPERTIES
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/client/Info.plist"
-    MACOSX_BUNDLE_ICON_FILE "moonlight.icns"
+    MACOSX_BUNDLE_ICON_FILE "starlight.icns"
     MACOSX_BUNDLE_BUNDLE_NAME "Moonlight"
     MACOSX_BUNDLE_GUI_IDENTIFIER "com.moonlight-stream.Moonlight"
     MACOSX_BUNDLE_BUNDLE_VERSION "6.2.1"
@@ -174,8 +174,8 @@ add_custom_command(TARGET Moonlight POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
             "$<TARGET_BUNDLE_CONTENT_DIR:Moonlight>/Resources"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/client/moonlight.icns"
-            "$<TARGET_BUNDLE_CONTENT_DIR:Moonlight>/Resources/moonlight.icns"
+            "${CMAKE_CURRENT_SOURCE_DIR}/client/starlight.icns"
+            "$<TARGET_BUNDLE_CONTENT_DIR:Moonlight>/Resources/starlight.icns"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/client/resources/ModeSeven.ttf"
             "$<TARGET_BUNDLE_CONTENT_DIR:Moonlight>/Resources/ModeSeven.ttf"
