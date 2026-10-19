@@ -7,7 +7,6 @@
 #include "hostrequests.h"
 #include "http.h"
 #include "macoswindowinfo.h"
-#include "serverinfo.h"
 #include "utils.h"
 #include "xml.h"
 

@@ -5,20 +5,11 @@
 #include "corelog.h"
 #include "xml.h"
 
-#include <algorithm>
-#include <cctype>
 #include <cstdlib>
 
 namespace {
 
 constexpr int kQuitTimeoutSeconds = 30;
-
-std::string lowercase(std::string value)
-{
-    std::transform(value.begin(), value.end(), value.begin(),
-                   [](unsigned char c) { return (char)std::tolower(c); });
-    return value;
-}
 
 bool requestXml(const HostConfig& host, const ClientConfig& client, const std::string& endpoint,
                 int timeoutSeconds, const CancellationToken* cancel,
@@ -68,10 +59,7 @@ bool fetchAppList(HostConfig& host, const ClientConfig& client, std::string& err
         apps.push_back(app);
     }
 
-    std::stable_sort(apps.begin(), apps.end(), [](const HostApp& a, const HostApp& b) {
-        return lowercase(a.name) < lowercase(b.name);
-    });
-
+    sortAppsByName(apps);
     host.apps = apps;
     return true;
 }

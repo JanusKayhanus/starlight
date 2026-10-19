@@ -38,13 +38,6 @@ std::string lowercase(std::string value)
     return value;
 }
 
-void sortApps(std::vector<HostApp>& apps)
-{
-    std::stable_sort(apps.begin(), apps.end(), [](const HostApp& a, const HostApp& b) {
-        return lowercase(a.name) < lowercase(b.name);
-    });
-}
-
 uint16_t copyPort(const std::string& key)
 {
     int port = CfPrefs::copyInt(key, kDefaultHttpPort);
@@ -85,7 +78,7 @@ std::vector<HostApp> loadSavedApps(int hostIndex)
             apps.push_back(app);
         }
     }
-    sortApps(apps);
+    sortAppsByName(apps);
     return apps;
 }
 
@@ -126,6 +119,13 @@ bool hostMatches(const HostConfig& host, const std::string& query)
 }
 
 } // namespace
+
+void sortAppsByName(std::vector<HostApp>& apps)
+{
+    std::stable_sort(apps.begin(), apps.end(), [](const HostApp& a, const HostApp& b) {
+        return lowercase(a.name) < lowercase(b.name);
+    });
+}
 
 bool loadClientIdentity(ClientConfig& client, std::string& error)
 {

@@ -77,7 +77,7 @@ final class CoreHostService: HostService {
                     continuation.yield(host)
                 }
             }
-            discovery.start(on: queue)
+            discovery.start()
             continuation.onTermination = { _ in discovery.cancel() }
         }
     }
@@ -127,7 +127,8 @@ final class CoreHostService: HostService {
 
 /// Browses for `_nvstream._tcp` and reports each service's IP address once.
 private final class BonjourDiscovery: @unchecked Sendable {
-    // Only touched on the queue passed to start(on:).
+    // A serial queue: the state below is only touched on it.
+    private let queue = DispatchQueue(label: "com.moonlight-stream.Starlight.discovery")
     private let browser = NWBrowser(for: .bonjour(type: "_nvstream._tcp", domain: nil), using: .tcp)
     private var reported: Set<String> = []
     private var connections: [NWConnection] = []
@@ -137,23 +138,26 @@ private final class BonjourDiscovery: @unchecked Sendable {
         self.onFound = onFound
     }
 
-    func start(on queue: DispatchQueue) {
+    func start() {
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             for result in results {
-                self?.resolve(result.endpoint, on: queue)
+                self?.resolve(result.endpoint)
             }
         }
         browser.start(queue: queue)
     }
 
+    /// Safe to call from any thread.
     func cancel() {
-        browser.cancel()
-        connections.forEach { $0.cancel() }
+        queue.async { [self] in
+            browser.cancel()
+            connections.forEach { $0.cancel() }
+        }
     }
 
     /// Bonjour gives a service name; connecting to it is the simplest way to
     /// learn the address the core needs.
-    private func resolve(_ endpoint: NWEndpoint, on queue: DispatchQueue) {
+    private func resolve(_ endpoint: NWEndpoint) {
         // IPv4, since a link-local IPv6 address is useless without its scope.
         let parameters = NWParameters.tcp
         if let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {

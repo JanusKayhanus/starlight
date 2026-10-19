@@ -94,6 +94,9 @@ bool selectSavedHost(const std::vector<HostConfig>& hosts, const std::string& qu
 // Makes `host` the default for selectSavedHost(), as the Qt launcher did.
 void rememberLastHost(const HostConfig& host);
 
+// Sorts apps by name, ignoring case, as the Qt build listed them.
+void sortAppsByName(std::vector<HostApp>& apps);
+
 // Sets the app to stream. `query` is an app ID or name (ignoring case); an
 // empty query picks Desktop. A host with no known apps can only stream
 // Desktop, under its well-known ID.
