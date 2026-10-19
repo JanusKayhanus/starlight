@@ -112,3 +112,10 @@ foreach(DYLIB libSDL2.dylib libavcodec.63.dylib libavutil.61.dylib
                 "$<TARGET_BUNDLE_CONTENT_DIR:Moonlight>/Frameworks/${DYLIB}"
     )
 endforeach()
+
+# LaunchServices requires a valid bundle signature even for local development.
+add_custom_command(TARGET Moonlight POST_BUILD
+    COMMAND codesign --force --deep --sign - --entitlements
+            "${CMAKE_CURRENT_SOURCE_DIR}/client/Moonlight.entitlements"
+            "$<TARGET_BUNDLE_DIR:Moonlight>"
+)

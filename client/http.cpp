@@ -11,6 +11,8 @@
 #include <openssl/x509.h>
 
 #include <cerrno>
+
+#include <SDL.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -50,6 +52,8 @@ int connectTcp(const std::string& host, uint16_t port, std::string& error)
             break;
         }
 
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "connect to %s:%s failed: %s",
+                     host.c_str(), portString.c_str(), strerror(errno));
         close(fd);
         fd = -1;
     }

@@ -47,3 +47,8 @@ Optional environment overrides for the stream (defaults: 3456x2160, 60 FPS, 100 
 - `MOONLIGHT_BITRATE` (kbps)
 
 Exit the stream with **Cmd+Q** or **Ctrl+Alt+Shift+Q**.
+
+If launching from Finder fails with "No route to host", macOS is denying Local
+Network access to this un-signed development build. Run the binary from a
+terminal once, or allow it under System Settings → Privacy & Security → Local
+Network. Building with a stable Developer ID signature avoids the prompt.
