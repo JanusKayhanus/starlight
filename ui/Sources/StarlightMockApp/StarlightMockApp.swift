@@ -20,7 +20,7 @@ struct MockStarlightApp: App {
 
         let hostService = MockHostService()
         let store = HostStore(service: hostService,
-                              makeStreamController: { MockStreamController(hostService: hostService) })
+                              makeStreamController: { HardcodedHostStreamController(hostService: hostService) })
         store.start()
         _store = State(initialValue: store)
     }
