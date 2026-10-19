@@ -16,6 +16,15 @@ struct StarlightCommands: Commands {
                 store.isAddingComputer = true
             }
             .keyboardShortcut("n")
+
+            // Lives in this group because `.saveItem` placements don't show
+            // up in an app without documents.
+            if let session {
+                Divider()
+                Button("Disconnect from \(session.host.name)") {
+                    session.disconnect()
+                }
+            }
         }
 
         CommandGroup(before: .toolbar) {
@@ -35,14 +44,6 @@ struct StarlightCommands: Commands {
             .disabled(session == nil || NSScreen.screens.count < 2)
 
             Divider()
-        }
-
-        CommandGroup(before: .saveItem) {
-            if let session {
-                Button("Disconnect from \(session.host.name)") {
-                    session.disconnect()
-                }
-            }
         }
     }
 
