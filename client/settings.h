@@ -103,6 +103,11 @@ bool selectApp(HostConfig& host, const std::string& query, std::string& error);
 // into its existing preference slot. Does nothing for an unsaved host.
 void saveHostDetails(const HostConfig& host);
 
+// Removes the saved host matching `query` (as in selectSavedHost()),
+// including its pinned certificate, and moves later hosts down a slot the way
+// the Qt build rewrote its host array.
+bool removeSavedHost(const std::string& query, std::string& error);
+
 // Persists a freshly paired host (name, address, uuid and pinned certificate)
 // into Moonlight's saved preferences, updating the existing entry if the host
 // is already known or adding a new one otherwise.

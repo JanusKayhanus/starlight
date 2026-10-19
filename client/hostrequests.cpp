@@ -2,7 +2,7 @@
 
 #include "http.h"
 #include "serverinfo.h"
-#include "SDL_compat.h"
+#include "corelog.h"
 #include "xml.h"
 
 #include <algorithm>
@@ -84,7 +84,7 @@ bool quitRunningApp(HostConfig& host, const ClientConfig& client, std::string& e
         return false;
     }
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Quit response: %s", response.c_str());
+    coreLog(CoreLogLevel::Info, "Quit response: %s", response.c_str());
 
     if (!fetchServerInfo(host, client, error, cancel)) {
         return false;

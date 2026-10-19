@@ -2,7 +2,7 @@
 
 #include "cfprefs.h"
 #include "http.h"
-#include "SDL_compat.h"
+#include "corelog.h"
 #include "xml.h"
 
 #include <Limelight.h>
@@ -126,14 +126,12 @@ bool isGfeVersionSupported(const std::string& gfeVersion)
     std::vector<int> gfeVersionQuad;
     std::vector<int> latestSupportedVersionQuad;
     if (!parseVersion(gfeVersion, gfeVersionQuad) || gfeVersionQuad.size() <= 1) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "Failed to parse GFE version: %s", gfeVersion.c_str());
+        coreLog(CoreLogLevel::Warning, "Failed to parse GFE version: %s", gfeVersion.c_str());
         return true;
     }
     if (!parseVersion(latestSupportedVersion, latestSupportedVersionQuad) ||
             latestSupportedVersionQuad.size() <= 1) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "Failed to parse latest supported version: %s", latestSupportedVersion.c_str());
+        coreLog(CoreLogLevel::Warning, "Failed to parse latest supported version: %s", latestSupportedVersion.c_str());
         return true;
     }
 
@@ -153,8 +151,7 @@ bool isGfeVersionSupported(const std::string& gfeVersion)
         }
         else if (actualVerVal > latestSupportedVal) {
             // Actual version is greater than latest supported - this is bad
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "GFE version %s is not supported by this version of Moonlight",
+            coreLog(CoreLogLevel::Warning, "GFE version %s is not supported by this version of Moonlight",
                         gfeVersion.c_str());
             return false;
         }
@@ -205,8 +202,7 @@ bool fetchServerInfo(HostConfig& host, const ClientConfig& client, std::string& 
             response = httpsResponse;
         }
         else if (httpStatusCode == 401 || (ok && responseStatusCode(httpsResponse) == 401)) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "Host rejected our client certificate; it no longer considers us paired");
+            coreLog(CoreLogLevel::Warning, "Host rejected our client certificate; it no longer considers us paired");
         }
         else {
             if (!ok) {
@@ -278,8 +274,7 @@ bool fetchServerInfo(HostConfig& host, const ClientConfig& client, std::string& 
     host.gpuModel = xmlTag(response, "gputype");
     host.isSupportedServerVersion = isGfeVersionSupported(host.gfeVersion);
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                "Host: %s (%s), app version: %s, GFE: %s, GPU: %s, codec modes: 0x%X, "
+    coreLog(CoreLogLevel::Info, "Host: %s (%s), app version: %s, GFE: %s, GPU: %s, codec modes: 0x%X, "
                 "paired: %s, current game: %d",
                 host.name.c_str(), host.address.c_str(),
                 host.appVersion.c_str(), host.gfeVersion.c_str(), host.gpuModel.c_str(),

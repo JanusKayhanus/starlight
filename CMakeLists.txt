@@ -64,20 +64,44 @@ endforeach()
 # sdl2-compat blocks before main() on a modal "Failed loading SDL3" dialog.
 list(APPEND MOONLIGHT_BUNDLED_DYLIBS libSDL3.dylib)
 
-add_executable(Moonlight MACOSX_BUNDLE
-    client/backend/richpresencemanager.cpp
-    client/main.cpp
-    client/cli.cpp
+# Host management shared by the streaming client and the Starlight UI: saved
+# hosts, serverinfo, app lists, pairing, Wake-on-LAN. It doesn't use SDL, so
+# the UI can link it without loading SDL.
+add_library(MoonlightCore STATIC
     client/cfprefs.cpp
+    client/corelog.cpp
     client/hostrequests.cpp
     client/http.cpp
     client/identity.cpp
     client/pairing.cpp
-    client/path.cpp
     client/serverinfo.cpp
     client/settings.cpp
     client/wol.cpp
     client/xml.cpp
+)
+
+target_include_directories(MoonlightCore
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/client"
+    PRIVATE
+        "${MOONLIGHT_DEPS}/include"
+        "${MOONLIGHT_COMMON}/moonlight-common-c/src"
+)
+
+target_link_libraries(MoonlightCore PUBLIC ssl crypto "-framework CoreFoundation")
+
+target_compile_options(MoonlightCore PRIVATE
+    -Wall
+    -Wextra
+    -Wno-unused-parameter
+    -Wno-deprecated-declarations
+)
+
+add_executable(Moonlight MACOSX_BUNDLE
+    client/backend/richpresencemanager.cpp
+    client/main.cpp
+    client/cli.cpp
+    client/path.cpp
     client/settings/mappingmanager.cpp
     client/settings/streamingpreferences.cpp
     client/streaming/awdlsuppressor.cpp
@@ -146,6 +170,7 @@ add_library(h264bitstream STATIC
 target_include_directories(h264bitstream PUBLIC "${MOONLIGHT_H264}")
 
 target_link_libraries(Moonlight PRIVATE
+    MoonlightCore
     ${MOONLIGHT_PREBUILT_TARGETS}
     moonlight-common-c
     h264bitstream

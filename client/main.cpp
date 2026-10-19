@@ -1,4 +1,5 @@
 #include "cli.h"
+#include "corelog.h"
 #include "hostrequests.h"
 #include "path.h"
 #include "serverinfo.h"
@@ -11,8 +12,29 @@
 #include <cstdio>
 #include <string>
 
+namespace {
+
+// Sends the core's log messages to SDL's log, like the rest of the client.
+void logCoreMessage(CoreLogLevel level, const char* message)
+{
+    switch (level) {
+    case CoreLogLevel::Info:
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%s", message);
+        break;
+    case CoreLogLevel::Warning:
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", message);
+        break;
+    case CoreLogLevel::Error:
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", message);
+        break;
+    }
+}
+
+} // namespace
+
 int main(int argc, char** argv)
 {
+    setCoreLogHandler(logCoreMessage);
     Path::initialize();
 
     // Handle the "pair" subcommand before anything else so it can run against a

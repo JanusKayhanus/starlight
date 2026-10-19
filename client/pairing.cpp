@@ -235,7 +235,8 @@ std::string pairQuery(const std::string& uniqueId, const std::string& extra)
 PairState pairHost(const std::string& address, uint16_t httpPort, uint16_t httpsPort,
                    const std::string& serverAppVersion, const std::string& uniqueId,
                    const std::string& pin,
-                   std::string& serverCertPem, std::string& error)
+                   std::string& serverCertPem, std::string& error,
+                   const CancellationToken* cancel)
 {
     // The host uses SHA-256 for the PIN hash on generation 7+ and SHA-1 before
     // that, mirroring the Qt build.
@@ -264,7 +265,7 @@ PairState pairHost(const std::string& address, uint16_t httpPort, uint16_t https
     if (!httpGet(address, httpPort,
                  pairQuery(uniqueId, "phrase=getservercert&salt=" + hexEncode(salt) +
                            "&clientcert=" + hexEncode(clientCert)),
-                 response, error, 0)) {
+                 response, error, 0, cancel)) {
         return PairState::Failed;
     }
     if (!checkResponseStatus(response, error)) {
@@ -295,7 +296,7 @@ PairState pairHost(const std::string& address, uint16_t httpPort, uint16_t https
     response.clear();
     if (!httpGet(address, httpPort,
                  pairQuery(uniqueId, "clientchallenge=" + hexEncode(encryptedChallenge)),
-                 response, error) ||
+                 response, error, kDefaultHttpTimeoutSeconds, cancel) ||
         !checkResponseStatus(response, error)) {
         unpair(address, httpPort, uniqueId);
         return PairState::Failed;
@@ -333,7 +334,7 @@ PairState pairHost(const std::string& address, uint16_t httpPort, uint16_t https
     response.clear();
     if (!httpGet(address, httpPort,
                  pairQuery(uniqueId, "serverchallengeresp=" + hexEncode(encryptedChallengeResponseHash)),
-                 response, error) ||
+                 response, error, kDefaultHttpTimeoutSeconds, cancel) ||
         !checkResponseStatus(response, error)) {
         unpair(address, httpPort, uniqueId);
         return PairState::Failed;
@@ -373,7 +374,7 @@ PairState pairHost(const std::string& address, uint16_t httpPort, uint16_t https
     response.clear();
     if (!httpGet(address, httpPort,
                  pairQuery(uniqueId, "clientpairingsecret=" + hexEncode(clientPairingSecret)),
-                 response, error) ||
+                 response, error, kDefaultHttpTimeoutSeconds, cancel) ||
         !checkResponseStatus(response, error)) {
         unpair(address, httpPort, uniqueId);
         return PairState::Failed;
@@ -388,7 +389,8 @@ PairState pairHost(const std::string& address, uint16_t httpPort, uint16_t https
     // we just received.
     response.clear();
     if (!httpsGet(address, httpsPort, pairQuery(uniqueId, "phrase=pairchallenge"),
-                  clientCert, clientKey, serverCertPemStage, response, error) ||
+                  clientCert, clientKey, serverCertPemStage, response, error,
+                  kDefaultHttpTimeoutSeconds, nullptr, cancel) ||
         !checkResponseStatus(response, error)) {
         unpair(address, httpPort, uniqueId);
         return PairState::Failed;

@@ -1,5 +1,7 @@
 #include "http.h"
 
+#include "corelog.h"
+
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -16,7 +18,7 @@
 #include <cerrno>
 #include <chrono>
 
-#include <SDL.h>
+#include "corelog.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -118,7 +120,7 @@ int connectTcp(const std::string& host, uint16_t port, int timeoutSeconds,
         }
 
         if (!isCancelled(cancel)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "connect to %s:%s failed: %s",
+            coreLog(CoreLogLevel::Error, "connect to %s:%s failed: %s",
                          host.c_str(), portString.c_str(), strerror(connectError));
         }
         close(fd);

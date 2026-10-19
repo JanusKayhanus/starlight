@@ -311,6 +311,30 @@ void saveHostDetails(const HostConfig& host)
     }
 }
 
+bool removeSavedHost(const std::string& query, std::string& error)
+{
+    std::vector<HostConfig> hosts = loadSavedHosts();
+    HostConfig host;
+    if (query.empty() || !selectSavedHost(hosts, query, host, error)) {
+        if (query.empty()) {
+            error = "No host was given";
+        }
+        return false;
+    }
+
+    int count = savedHostCount();
+    CfPrefs::removeWithPrefix(keyForHost(host.savedIndex, ""));
+    for (int i = host.savedIndex + 1; i <= count; i++) {
+        CfPrefs::renamePrefix(keyForHost(i, ""), keyForHost(i - 1, ""));
+    }
+    CfPrefs::setInt("hosts.size", std::max(count - 1, 0));
+
+    if (!host.uuid.empty() && CfPrefs::copyString(kLastHostUuidKey) == host.uuid) {
+        CfPrefs::remove(kLastHostUuidKey);
+    }
+    return true;
+}
+
 bool savePairedHost(const HostConfig& host, std::string& error)
 {
     int hostIndex = 0;

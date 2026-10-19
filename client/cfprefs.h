@@ -21,4 +21,11 @@ void setData(const std::string& key, const std::string& value);
 // Deletes `key`, if it exists.
 void remove(const std::string& key);
 
+// Deletes every key that starts with `prefix`.
+void removeWithPrefix(const std::string& prefix);
+
+// Renames every key that starts with `from` to start with `to` instead,
+// keeping its value.
+void renamePrefix(const std::string& from, const std::string& to);
+
 } // namespace CfPrefs

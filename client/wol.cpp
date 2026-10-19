@@ -1,6 +1,6 @@
 #include "wol.h"
 
-#include "SDL_compat.h"
+#include "corelog.h"
 
 #include <arpa/inet.h>
 #include <ifaddrs.h>
@@ -125,7 +125,7 @@ bool sendWakeOnLan(const HostConfig& host, std::string& error)
             hints.ai_flags = 0;
             int err = getaddrinfo(target.first.c_str(), nullptr, &hints, &resolved);
             if (err != 0) {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Unable to resolve %s: %s",
+                coreLog(CoreLogLevel::Warning, "Unable to resolve %s: %s",
                             target.first.c_str(), gai_strerror(err));
                 continue;
             }
@@ -161,12 +161,12 @@ bool sendWakeOnLan(const HostConfig& host, std::string& error)
 
                 if (sendto(fd, payload.data(), payload.size(), 0,
                            (struct sockaddr*)&address, ai->ai_addrlen) == (ssize_t)payload.size()) {
-                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Sent WoL packet to %s via %s:%u",
+                    coreLog(CoreLogLevel::Info, "Sent WoL packet to %s via %s:%u",
                                 host.name.c_str(), target.first.c_str(), port);
                     sent = true;
                 }
                 else {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Sending WoL packet to %s:%u failed: %s",
+                    coreLog(CoreLogLevel::Warning, "Sending WoL packet to %s:%u failed: %s",
                                 target.first.c_str(), port, strerror(errno));
                 }
             }

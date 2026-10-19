@@ -69,6 +69,32 @@ void setPreference(const std::string& key, CFPropertyListRef value)
     }
 }
 
+// All keys in the domain that start with `prefix`.
+std::vector<std::string> keysWithPrefix(const std::string& prefix)
+{
+    std::vector<std::string> result;
+    CFStringRef domain = CFStringCreateWithCString(kCFAllocatorDefault, kDomain,
+                                                   kCFStringEncodingUTF8);
+    if (domain == nullptr) {
+        return result;
+    }
+
+    CFArrayRef keys = CFPreferencesCopyKeyList(domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    CFRelease(domain);
+    if (keys == nullptr) {
+        return result;
+    }
+
+    for (CFIndex i = 0; i < CFArrayGetCount(keys); i++) {
+        std::string key = cfStringToStd((CFStringRef)CFArrayGetValueAtIndex(keys, i));
+        if (key.compare(0, prefix.size(), prefix) == 0) {
+            result.push_back(key);
+        }
+    }
+    CFRelease(keys);
+    return result;
+}
+
 } // namespace
 
 namespace CfPrefs {
@@ -187,6 +213,25 @@ void setData(const std::string& key, const std::string& value)
 void remove(const std::string& key)
 {
     writePreference(key, nullptr);
+}
+
+void removeWithPrefix(const std::string& prefix)
+{
+    for (const std::string& key : keysWithPrefix(prefix)) {
+        writePreference(key, nullptr);
+    }
+}
+
+void renamePrefix(const std::string& from, const std::string& to)
+{
+    for (const std::string& key : keysWithPrefix(from)) {
+        CFPropertyListRef value = copyPreference(key);
+        writePreference(key, nullptr);
+        if (value != nullptr) {
+            writePreference(to + key.substr(from.size()), value);
+            CFRelease(value);
+        }
+    }
 }
 
 } // namespace CfPrefs
