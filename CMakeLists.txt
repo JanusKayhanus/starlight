@@ -168,6 +168,30 @@ set_target_properties(Moonlight PROPERTIES
     MACOSX_BUNDLE_SHORT_VERSION_STRING "6.2.1"
 )
 
+# The Starlight UI (ui/, a Swift package) is the bundle's main executable, so
+# opening Moonlight.app shows it. The streaming client stays next to it as
+# Contents/MacOS/Moonlight, which the UI launches to connect and which can
+# still be run directly from the command line.
+set(STARLIGHT_SWIFT_BUILD_DIR "${CMAKE_BINARY_DIR}/swift")
+set(STARLIGHT_SWIFT_ARGS -c release --package-path "${CMAKE_CURRENT_SOURCE_DIR}/ui"
+                         --scratch-path "${STARLIGHT_SWIFT_BUILD_DIR}")
+list(LENGTH CMAKE_OSX_ARCHITECTURES STARLIGHT_ARCH_COUNT)
+if(STARLIGHT_ARCH_COUNT GREATER 1)
+    foreach(ARCH IN LISTS CMAKE_OSX_ARCHITECTURES)
+        list(APPEND STARLIGHT_SWIFT_ARGS --arch "${ARCH}")
+    endforeach()
+    set(STARLIGHT_UI_BINARY "${STARLIGHT_SWIFT_BUILD_DIR}/apple/Products/Release/StarlightMockApp")
+else()
+    set(STARLIGHT_UI_BINARY "${STARLIGHT_SWIFT_BUILD_DIR}/release/StarlightMockApp")
+endif()
+
+# Always run: swift build is incremental and tracks the package's own sources.
+add_custom_target(StarlightUI
+    COMMAND swift build ${STARLIGHT_SWIFT_ARGS}
+    COMMENT "Building the Starlight UI"
+    VERBATIM
+)
+
 # Keep the app bundle icon and runtime data files in the executable's
 # Resources directory.
 add_custom_command(TARGET Moonlight POST_BUILD
@@ -200,12 +224,23 @@ foreach(DYLIB IN LISTS MOONLIGHT_BUNDLED_DYLIBS)
     )
 endforeach()
 
-# Sign the bundle (including nested code). We must not re-sign the prebuilt
-# third-party dylibs with a plain `codesign --force --sign -` (that makes SDL2
-# abort during load), so use `--deep`, which re-signs them correctly.
-add_custom_command(TARGET Moonlight POST_BUILD
+# Copy the Starlight UI in as the main executable once both are built, then
+# sign the bundle (including nested code). This is a separate target because
+# POST_BUILD steps only run when the client relinks, which a UI-only change
+# doesn't cause, and the bundle can't be signed before its main executable is
+# in place.
+#
+# We must not re-sign the prebuilt third-party dylibs with a plain
+# `codesign --force --sign -` (that makes SDL2 abort during load), so use
+# `--deep`, which re-signs them correctly.
+add_custom_target(StarlightBundle ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${STARLIGHT_UI_BINARY}"
+            "$<TARGET_BUNDLE_CONTENT_DIR:Moonlight>/MacOS/Starlight"
     COMMAND codesign --force --deep --sign - --entitlements
             "${CMAKE_CURRENT_SOURCE_DIR}/client/Moonlight.entitlements"
             "$<TARGET_BUNDLE_DIR:Moonlight>"
-    COMMENT "Signing Moonlight.app"
+    COMMENT "Adding the Starlight UI to Moonlight.app and signing it"
+    VERBATIM
 )
+add_dependencies(StarlightBundle Moonlight StarlightUI)
