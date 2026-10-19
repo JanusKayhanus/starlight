@@ -355,7 +355,12 @@ running.
 - Audio follows `hostaudio`. With `hostaudio` enabled the host plays audio
   locally, so the client intentionally receives no audio to render. If no audio
   arrives with `hostaudio` disabled, check the host's audio capture device.
-- If a stream ends but the host keeps the app running, the next launch uses
-  `/resume`, which keeps the host's existing resolution/refresh rate. Use the
-  cancel command in section 8 (or exit with `Ctrl+Alt+Shift+E`) to force a
+- If a stream ends but the host keeps the Desktop app running, the next launch
+  uses `/resume`, which keeps the host's existing resolution/refresh rate. Use
+  the cancel command in section 8 (or exit with `Ctrl+Alt+Shift+E`) to force a
   fresh launch.
+- If a different app is running on the host, the client quits it and then
+  launches Desktop. If the host refuses (for example, the app was started by
+  another client), the launch fails with an error.
+- The client checks its pairing over HTTPS before streaming. If the host no
+  longer trusts it, the launch fails and asks you to run `Moonlight pair`.

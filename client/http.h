@@ -11,7 +11,12 @@ bool httpGet(const std::string& host, uint16_t port, const std::string& path,
              std::string& response, std::string& error,
              int timeoutSeconds = kDefaultHttpTimeoutSeconds);
 
+// `httpStatusCode`, if provided, receives the HTTP status of the response
+// (0 if none was received), so callers can tell an unpaired client (401)
+// apart from other failures.
 bool httpsGet(const std::string& host, uint16_t port, const std::string& path,
               const std::string& clientCertPem, const std::string& clientKeyPem,
               const std::string& serverCertPem,
-              std::string& response, std::string& error);
+              std::string& response, std::string& error,
+              int timeoutSeconds = kDefaultHttpTimeoutSeconds,
+              int* httpStatusCode = nullptr);

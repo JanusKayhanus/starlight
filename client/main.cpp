@@ -77,6 +77,13 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    if (!host.isPaired) {
+        fprintf(stderr, "%s is not paired with this client. Run: Moonlight pair %s\n",
+                host.name.c_str(), host.address.c_str());
+        SDL_Quit();
+        return 1;
+    }
+
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                 "Streaming %s from %s at %dx%dx%d, %d kbps (HDR: %s, YUV 4:4:4: %s)",
                 host.appName.c_str(), host.name.c_str(),

@@ -20,6 +20,8 @@ struct HostConfig {
     // Populated from the host's serverinfo response
     std::string appVersion;
     std::string gfeVersion;
+    std::string gpuModel;
+    bool isPaired = false;
     int serverCodecModeSupport = 0;
     int maxLumaPixelsHEVC = 0;
     int currentGameId = 0;

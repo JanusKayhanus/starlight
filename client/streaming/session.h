@@ -159,9 +159,11 @@ private:
 
     void fitWindowToDisplay();
 
+    void moveFullscreenWindow(const SDL_Rect& bounds);
+
     void cycleDisplay();
 
-    void quitHostApp();
+    bool quitHostApp();
 
     enum class DecoderAvailability {
         None,

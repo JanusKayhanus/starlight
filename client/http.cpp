@@ -121,7 +121,8 @@ bool decodeChunked(const std::string& body, std::string& decoded)
     return true;
 }
 
-bool parseHttpResponse(const std::string& raw, std::string& body, std::string& error)
+bool parseHttpResponse(const std::string& raw, std::string& body, std::string& error,
+                       int* httpStatusCode = nullptr)
 {
     size_t headerEnd = raw.find("\r\n\r\n");
     if (headerEnd == std::string::npos) {
@@ -136,6 +137,10 @@ bool parseHttpResponse(const std::string& raw, std::string& body, std::string& e
     if (sscanf(headers.c_str(), "HTTP/%*s %d", &statusCode) != 1) {
         error = "Malformed HTTP status line";
         return false;
+    }
+
+    if (httpStatusCode != nullptr) {
+        *httpStatusCode = statusCode;
     }
 
     if (statusCode != 200) {
@@ -305,14 +310,19 @@ bool httpGet(const std::string& host, uint16_t port, const std::string& path,
 bool httpsGet(const std::string& host, uint16_t port, const std::string& path,
               const std::string& clientCertPem, const std::string& clientKeyPem,
               const std::string& serverCertPem,
-              std::string& response, std::string& error)
+              std::string& response, std::string& error,
+              int timeoutSeconds, int* httpStatusCode)
 {
+    if (httpStatusCode != nullptr) {
+        *httpStatusCode = 0;
+    }
+
     SSL_CTX* ctx = createSslContext(clientCertPem, clientKeyPem, error);
     if (ctx == nullptr) {
         return false;
     }
 
-    int fd = connectTcp(host, port, kDefaultHttpTimeoutSeconds, error);
+    int fd = connectTcp(host, port, timeoutSeconds, error);
     if (fd < 0) {
         SSL_CTX_free(ctx);
         return false;
@@ -340,7 +350,7 @@ bool httpsGet(const std::string& host, uint16_t port, const std::string& path,
             else {
                 std::string raw;
                 if (readAllSsl(ssl, raw, error)) {
-                    ok = parseHttpResponse(raw, response, error);
+                    ok = parseHttpResponse(raw, response, error, httpStatusCode);
                 }
             }
         }

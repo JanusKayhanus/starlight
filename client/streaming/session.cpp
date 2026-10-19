@@ -6,6 +6,7 @@
 #include "video/ffmpeg.h"
 #include "http.h"
 #include "macoswindowinfo.h"
+#include "serverinfo.h"
 #include "utils.h"
 #include "xml.h"
 
@@ -32,6 +33,9 @@
 
 #define CONN_TEST_SERVER "qt.conntest.moonlight-stream.org"
 
+// Matches the Qt build's QUIT_TIMEOUT_MS
+#define QUIT_TIMEOUT_SECONDS 30
+
 namespace {
 
 // Parses a dotted version string like "3.23.0.74" into its numeric parts.
@@ -49,17 +53,6 @@ std::vector<int> parseQuad(const std::string& version)
         start = dot + 1;
     }
     return parts;
-}
-
-// Moves a fullscreen window to new display bounds. SDL's borderless
-// fullscreen emulation mishandles SetWindowSize/SetWindowPosition while the
-// fullscreen flag is set, so leave fullscreen first and re-enter afterwards.
-void applyFullscreenGeometry(SDL_Window* window, Uint32 fullscreenFlag, const SDL_Rect& bounds)
-{
-    SDL_SetWindowFullscreen(window, 0);
-    SDL_SetWindowPosition(window, bounds.x, bounds.y);
-    SDL_SetWindowSize(window, bounds.w, bounds.h);
-    SDL_SetWindowFullscreen(window, fullscreenFlag);
 }
 
 std::string toHex(const unsigned char* data, size_t length)
@@ -1269,10 +1262,37 @@ void Session::fitWindowToDisplay()
                 "Fitting stream window to display %d (%dx%d at %d,%d)",
                 displayIndex, bounds.w, bounds.h, bounds.x, bounds.y);
 
-    applyFullscreenGeometry(m_Window, m_FullScreenFlag, bounds);
+    moveFullscreenWindow(bounds);
+}
+
+void Session::moveFullscreenWindow(const SDL_Rect& bounds)
+{
+    // SDL's borderless fullscreen emulation mishandles SetWindowSize/
+    // SetWindowPosition while the fullscreen flag is set, so we leave
+    // fullscreen first and re-enter afterwards.
+    //
+    // Leaving fullscreen with an AVSampleBufferDisplayLayer attached may
+    // deadlock WindowServer on Apple Silicon Macs, so destroy the decoder
+    // first, exactly as toggleFullscreen() does. See issue #973.
+    SDL_LockMutex(m_DecoderLock);
+    delete m_VideoDecoder;
+    m_VideoDecoder = nullptr;
+    SDL_UnlockMutex(m_DecoderLock);
+
+    SDL_SetWindowFullscreen(m_Window, 0);
+    SDL_SetWindowPosition(m_Window, bounds.x, bounds.y);
+    SDL_SetWindowSize(m_Window, bounds.w, bounds.h);
+    SDL_SetWindowFullscreen(m_Window, m_FullScreenFlag);
 
     // Keep the borderless window managed after the move.
     MacOSConfigureStreamWindow(m_Window, false);
+
+    // The window events from the transition normally recreate the decoder,
+    // but don't depend on them: the stream would stay frozen if none arrived.
+    // The recreation path flushes this event if a window event got there first.
+    SDL_Event event = {};
+    event.type = SDL_RENDER_DEVICE_RESET;
+    SDL_PushEvent(&event);
 }
 
 void Session::cycleDisplay()
@@ -1297,8 +1317,7 @@ void Session::cycleDisplay()
                 nextDisplay, bounds.w, bounds.h, bounds.x, bounds.y);
 
     if (m_IsFullScreen) {
-        applyFullscreenGeometry(m_Window, m_FullScreenFlag, bounds);
-        MacOSConfigureStreamWindow(m_Window, false);
+        moveFullscreenWindow(bounds);
     }
     else {
         int width, height;
@@ -1441,6 +1460,19 @@ bool Session::startConnection()
                                                                          m_StreamConfig.height,
                                                                          m_StreamConfig.fps,
                                                                          false);
+    }
+
+    // If a different app is already running on the host, quit it so we can
+    // launch ours. Resuming would otherwise stream that app instead.
+    if (m_Host->currentGameId != 0 && m_Host->currentGameId != m_Host->appId) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Host is running app %d; quitting it to start %s",
+                    m_Host->currentGameId, m_Host->appName.c_str());
+        if (!quitHostApp()) {
+            displayLaunchError("Unable to quit the app that is running on " + m_Host->name +
+                               " in order to start " + m_Host->appName + ".");
+            return false;
+        }
     }
 
     // Build the launch/resume query exactly as the original client did.
@@ -1589,17 +1621,19 @@ void Session::start()
     exec();
 }
 
-void Session::quitHostApp()
+bool Session::quitHostApp()
 {
     std::string response;
     std::string error;
     if (!httpsGet(m_Host->address, m_Host->httpsPort, "/cancel",
                   m_Client->certPem, m_Client->keyPem, m_Host->serverCertPem,
-                  response, error)) {
+                  response, error, QUIT_TIMEOUT_SECONDS)) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "Unable to quit the host app: %s", error.c_str());
-        return;
+        return false;
     }
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Quit response: %s", response.c_str());
 
     std::string statusCode = xmlAttribute(response, "status_code");
     if (!statusCode.empty() && statusCode != "200") {
@@ -1607,7 +1641,24 @@ void Session::quitHostApp()
                     "Host rejected the quit request: %s (%s)",
                     xmlAttribute(response, "status_message").c_str(),
                     statusCode.c_str());
+        return false;
     }
+
+    // Newer GFE versions will just return success even if quitting fails
+    // if we're not the original requester, so check that it actually quit.
+    if (!fetchServerInfo(*m_Host, *m_Client, error)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Unable to confirm the host app quit: %s", error.c_str());
+        return false;
+    }
+    if (m_Host->currentGameId != 0) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "The host app is still running (app %d). It may have been started by another client.",
+                    m_Host->currentGameId);
+        return false;
+    }
+
+    return true;
 }
 
 void Session::interrupt()
