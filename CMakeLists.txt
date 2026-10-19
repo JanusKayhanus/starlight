@@ -3,7 +3,18 @@ project(Moonlight LANGUAGES C CXX OBJC OBJCXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS version")
+set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
+
+# Default to a Release build for single-config generators (Make/Ninja).
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
+endif()
+
+# Depend only on the app bundle's Frameworks directory, and avoid embedding the
+# absolute build-tree library directory as a runtime search path.
+set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+set(CMAKE_INSTALL_RPATH "@executable_path/../Frameworks")
 
 set(MOONLIGHT_DEPS "${CMAKE_CURRENT_SOURCE_DIR}/libs/mac")
 set(MOONLIGHT_COMMON "${CMAKE_CURRENT_SOURCE_DIR}/moonlight-common-c")
@@ -13,12 +24,48 @@ if(NOT EXISTS "${MOONLIGHT_DEPS}/lib/libSDL2.dylib")
     message(FATAL_ERROR "Missing macOS dependencies. Run 'python3 setup-deps.py'.")
 endif()
 
+# Prebuilt third-party dylibs, exposed as imported targets so the link line and
+# the bundle copy/sign list can never drift apart. Each entry is "target:file".
+set(MOONLIGHT_PREBUILT_LIBS
+    "SDL2:libSDL2.dylib"
+    "SDL2_ttf:libSDL2_ttf.dylib"
+    "avcodec:libavcodec.63.dylib"
+    "avutil:libavutil.61.dylib"
+    "swscale:libswscale.10.dylib"
+    "opus:libopus.0.dylib"
+    "discord-rpc:libdiscord-rpc.dylib"
+    "ssl:libssl.3.dylib"
+    "crypto:libcrypto.3.dylib"
+)
+
+set(MOONLIGHT_PREBUILT_TARGETS "")
+set(MOONLIGHT_BUNDLED_DYLIBS "")
+foreach(_entry IN LISTS MOONLIGHT_PREBUILT_LIBS)
+    string(REPLACE ":" ";" _parts "${_entry}")
+    list(GET _parts 0 _target)
+    list(GET _parts 1 _file)
+
+    add_library(${_target} SHARED IMPORTED)
+    set_target_properties(${_target} PROPERTIES
+        IMPORTED_LOCATION "${MOONLIGHT_DEPS}/lib/${_file}")
+
+    list(APPEND MOONLIGHT_PREBUILT_TARGETS ${_target})
+    list(APPEND MOONLIGHT_BUNDLED_DYLIBS ${_file})
+endforeach()
+
+# libSDL2.dylib is sdl2-compat, which dlopen()s SDL3 from next to itself while
+# it loads. We don't link SDL3, but it must still be bundled: without it,
+# sdl2-compat blocks before main() on a modal "Failed loading SDL3" dialog.
+list(APPEND MOONLIGHT_BUNDLED_DYLIBS libSDL3.dylib)
+
 add_executable(Moonlight MACOSX_BUNDLE
     client/backend/richpresencemanager.cpp
     client/main.cpp
     client/cli.cpp
     client/cfprefs.cpp
     client/http.cpp
+    client/identity.cpp
+    client/pairing.cpp
     client/path.cpp
     client/serverinfo.cpp
     client/settings.cpp
@@ -68,7 +115,10 @@ target_compile_options(Moonlight PRIVATE
     -Wno-reorder-ctor
 )
 
-target_link_directories(Moonlight PRIVATE "${MOONLIGHT_DEPS}/lib")
+# Bundle everything under a single runtime search path (set globally above).
+set_target_properties(Moonlight PROPERTIES
+    INSTALL_RPATH "@executable_path/../Frameworks"
+)
 
 # Build the streaming protocol and bitstream helpers from source so the app
 # has no dependency on qmake or any Qt-built artifacts.
@@ -88,15 +138,7 @@ add_library(h264bitstream STATIC
 target_include_directories(h264bitstream PUBLIC "${MOONLIGHT_H264}")
 
 target_link_libraries(Moonlight PRIVATE
-    "${MOONLIGHT_DEPS}/lib/libSDL2.dylib"
-    "${MOONLIGHT_DEPS}/lib/libSDL2_ttf.dylib"
-    "${MOONLIGHT_DEPS}/lib/libavcodec.63.dylib"
-    "${MOONLIGHT_DEPS}/lib/libavutil.61.dylib"
-    "${MOONLIGHT_DEPS}/lib/libswscale.10.dylib"
-    "${MOONLIGHT_DEPS}/lib/libopus.0.dylib"
-    "${MOONLIGHT_DEPS}/lib/libdiscord-rpc.dylib"
-    "${MOONLIGHT_DEPS}/lib/libssl.3.dylib"
-    "${MOONLIGHT_DEPS}/lib/libcrypto.3.dylib"
+    ${MOONLIGHT_PREBUILT_TARGETS}
     moonlight-common-c
     h264bitstream
     "-framework VideoToolbox"
@@ -146,14 +188,11 @@ add_custom_command(TARGET Moonlight POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "$<TARGET_FILE:MoonlightAWDLHelper>"
             "$<TARGET_BUNDLE_CONTENT_DIR:Moonlight>/MacOS/MoonlightAWDLHelper"
-    COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/scripts/add-bundle-rpath.sh"
-            "$<TARGET_BUNDLE_CONTENT_DIR:Moonlight>/MacOS/Moonlight"
     COMMAND ${CMAKE_COMMAND} -E make_directory
             "$<TARGET_BUNDLE_CONTENT_DIR:Moonlight>/Frameworks"
 )
-foreach(DYLIB libSDL2.dylib libSDL2_ttf.dylib libavcodec.63.dylib
-              libavutil.61.dylib libswscale.10.dylib libopus.0.dylib
-              libdiscord-rpc.dylib libssl.3.dylib libcrypto.3.dylib)
+
+foreach(DYLIB IN LISTS MOONLIGHT_BUNDLED_DYLIBS)
     add_custom_command(TARGET Moonlight POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${MOONLIGHT_DEPS}/lib/${DYLIB}"
@@ -161,9 +200,12 @@ foreach(DYLIB libSDL2.dylib libSDL2_ttf.dylib libavcodec.63.dylib
     )
 endforeach()
 
-# LaunchServices requires a valid bundle signature even for local development.
+# Sign the bundle (including nested code). We must not re-sign the prebuilt
+# third-party dylibs with a plain `codesign --force --sign -` (that makes SDL2
+# abort during load), so use `--deep`, which re-signs them correctly.
 add_custom_command(TARGET Moonlight POST_BUILD
     COMMAND codesign --force --deep --sign - --entitlements
             "${CMAKE_CURRENT_SOURCE_DIR}/client/Moonlight.entitlements"
             "$<TARGET_BUNDLE_DIR:Moonlight>"
+    COMMENT "Signing Moonlight.app"
 )

@@ -50,6 +50,9 @@ bool fetchServerInfo(HostConfig& host, const ClientConfig& client, std::string& 
         return false;
     }
 
+    host.name = xmlTag(response, "hostname");
+    host.uuid = xmlTag(response, "uniqueid");
+
     host.gfeVersion = xmlTag(response, "GfeVersion");
     host.maxLumaPixelsHEVC = atoi(xmlTag(response, "MaxLumaPixelsHEVC").c_str());
     host.serverCodecModeSupport = atoi(xmlTag(response, "ServerCodecModeSupport").c_str());

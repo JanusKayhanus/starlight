@@ -1,5 +1,10 @@
 #include "cli.h"
 
+#include "identity.h"
+#include "pairing.h"
+#include "serverinfo.h"
+#include "settings.h"
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -221,4 +226,145 @@ bool applyCommandLineOverrides(int argc, char** argv,
     }
 
     return true;
+}
+
+namespace {
+
+bool isValidPin(const std::string& pin)
+{
+    if (pin.size() != 4) {
+        return false;
+    }
+    return pin.find_first_not_of("0123456789") == std::string::npos;
+}
+
+void printPairUsage()
+{
+    fprintf(stderr,
+            "Usage: Moonlight pair <host> [--pin <4-digit PIN>]\n"
+            "\n"
+            "Pairs with the given host (hostname or IP address). Moonlight prints\n"
+            "a PIN, which you then enter on the host (in Sunshine, under the\n"
+            "PIN tab of its web UI). Use --pin to choose the PIN yourself.\n");
+}
+
+} // namespace
+
+bool handlePairCommandIfPresent(int argc, char** argv, int& exitCode)
+{
+    if (argc < 2 || std::string(argv[1]) != "pair") {
+        return false;
+    }
+
+    std::string host;
+    std::string pin;
+
+    for (int i = 2; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--pin") {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Missing value for --pin\n");
+                exitCode = 1;
+                return true;
+            }
+            pin = argv[++i];
+        }
+        else if (arg == "--help" || arg == "-h") {
+            printPairUsage();
+            exitCode = 0;
+            return true;
+        }
+        else if (!arg.empty() && arg[0] == '-') {
+            fprintf(stderr, "Unknown option: %s\n", arg.c_str());
+            exitCode = 1;
+            return true;
+        }
+        else if (host.empty()) {
+            host = arg;
+        }
+        else {
+            fprintf(stderr, "Unexpected argument: %s\n", arg.c_str());
+            exitCode = 1;
+            return true;
+        }
+    }
+
+    if (host.empty()) {
+        printPairUsage();
+        exitCode = 1;
+        return true;
+    }
+
+    // The client chooses the PIN and the user enters it on the host, as in the
+    // Qt build. The host never displays a PIN of its own.
+    if (pin.empty()) {
+        char buffer[5];
+        snprintf(buffer, sizeof(buffer), "%04u", arc4random_uniform(10000));
+        pin = buffer;
+    }
+
+    if (!isValidPin(pin)) {
+        fprintf(stderr, "The PIN must be 4 digits\n");
+        exitCode = 1;
+        return true;
+    }
+
+    ClientConfig client;
+    client.uniqueId = Identity::getUniqueId();
+    client.certPem = Identity::getCertificate();
+    client.keyPem = Identity::getPrivateKey();
+    if (client.certPem.empty() || client.keyPem.empty()) {
+        fprintf(stderr, "Unable to load or create the client identity\n");
+        exitCode = 1;
+        return true;
+    }
+
+    HostConfig hostConfig;
+    hostConfig.address = host;
+    hostConfig.httpPort = 47989;
+    hostConfig.httpsPort = 47984;
+
+    std::string error;
+    if (!fetchServerInfo(hostConfig, client, error)) {
+        fprintf(stderr, "Unable to reach %s: %s\n", host.c_str(), error.c_str());
+        exitCode = 1;
+        return true;
+    }
+
+    fprintf(stderr, "Pairing with %s (%s, app version %s)...\n",
+            hostConfig.name.c_str(), host.c_str(), hostConfig.appVersion.c_str());
+    fprintf(stderr, "\n    Enter PIN %s on %s to finish pairing.\n\n",
+            pin.c_str(), hostConfig.name.c_str());
+
+    std::string serverCert;
+    PairState state = pairHost(hostConfig.address, hostConfig.httpPort, hostConfig.httpsPort,
+                               hostConfig.appVersion, client.uniqueId, pin, serverCert, error);
+    switch (state) {
+    case PairState::Paired:
+        hostConfig.serverCertPem = serverCert;
+        if (!savePairedHost(hostConfig, error)) {
+            fprintf(stderr, "Paired, but saving the host failed: %s\n", error.c_str());
+            exitCode = 1;
+            return true;
+        }
+        printf("Paired with %s (%s) successfully.\n", hostConfig.name.c_str(), hostConfig.address.c_str());
+        exitCode = 0;
+        return true;
+
+    case PairState::PinWrong:
+        fprintf(stderr, "Pairing failed: incorrect PIN\n");
+        exitCode = 1;
+        return true;
+
+    case PairState::AlreadyInProgress:
+        fprintf(stderr, "Pairing failed: %s\n", error.c_str());
+        exitCode = 1;
+        return true;
+
+    case PairState::Failed:
+    default:
+        fprintf(stderr, "Pairing failed: %s\n", error.c_str());
+        exitCode = 1;
+        return true;
+    }
 }

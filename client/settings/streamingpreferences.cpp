@@ -112,6 +112,18 @@ void StreamingPreferences::reload()
                                                   static_cast<int>(VideoDecoderSelection::VDS_AUTO)));
     rendererSelection = static_cast<RendererSelection>(CfPrefs::copyInt(SER_RENDERER,
                                                   static_cast<int>(RendererSelection::RS_AUTO)));
+    // The Qt build stored 1 for the Vulkan renderer, which no longer exists in
+    // this build. Normalize it (and any unknown value) back to Automatic so we
+    // never try to use a renderer that isn't compiled in.
+    switch (rendererSelection) {
+    case RendererSelection::RS_AUTO:
+    case RendererSelection::RS_METAL:
+    case RendererSelection::RS_AVSBDL:
+        break;
+    default:
+        rendererSelection = RendererSelection::RS_AUTO;
+        break;
+    }
     frameLatencyMode = static_cast<FrameLatencyMode>(CfPrefs::copyInt(SER_FRAMELATENCY,
                                                   static_cast<int>(FrameLatencyMode::FLM_DEFAULT)));
     windowMode = static_cast<WindowMode>(CfPrefs::copyInt(SER_WINDOWMODE,

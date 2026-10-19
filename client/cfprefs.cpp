@@ -42,6 +42,29 @@ std::string cfStringToStd(CFStringRef value)
     return std::string(buffer.data());
 }
 
+void setPreference(const std::string& key, CFPropertyListRef value)
+{
+    if (value == nullptr) {
+        return;
+    }
+
+    CFStringRef keyString = CFStringCreateWithCString(kCFAllocatorDefault, key.c_str(),
+                                                      kCFStringEncodingUTF8);
+    CFStringRef domain = CFStringCreateWithCString(kCFAllocatorDefault, kDomain,
+                                                   kCFStringEncodingUTF8);
+    if (keyString != nullptr && domain != nullptr) {
+        CFPreferencesSetAppValue(keyString, value, domain);
+        CFPreferencesAppSynchronize(domain);
+    }
+
+    if (domain != nullptr) {
+        CFRelease(domain);
+    }
+    if (keyString != nullptr) {
+        CFRelease(keyString);
+    }
+}
+
 } // namespace
 
 namespace CfPrefs {
@@ -120,6 +143,41 @@ std::string copyData(const std::string& key)
     }
     CFRelease(value);
     return result;
+}
+
+void setString(const std::string& key, const std::string& value)
+{
+    CFStringRef string = CFStringCreateWithBytes(kCFAllocatorDefault,
+                                                 (const UInt8*)value.data(), (CFIndex)value.size(),
+                                                 kCFStringEncodingUTF8, false);
+    setPreference(key, string);
+    if (string != nullptr) {
+        CFRelease(string);
+    }
+}
+
+void setInt(const std::string& key, int value)
+{
+    CFNumberRef number = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &value);
+    setPreference(key, number);
+    if (number != nullptr) {
+        CFRelease(number);
+    }
+}
+
+void setBool(const std::string& key, bool value)
+{
+    setPreference(key, value ? kCFBooleanTrue : kCFBooleanFalse);
+}
+
+void setData(const std::string& key, const std::string& value)
+{
+    CFDataRef data = CFDataCreate(kCFAllocatorDefault, (const UInt8*)value.data(),
+                                  (CFIndex)value.size());
+    setPreference(key, data);
+    if (data != nullptr) {
+        CFRelease(data);
+    }
 }
 
 } // namespace CfPrefs

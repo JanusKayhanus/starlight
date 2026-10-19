@@ -2,6 +2,7 @@
 
 #include "cfprefs.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <sstream>
 
@@ -92,5 +93,46 @@ bool loadMoonlightSettings(HostConfig& host, ClientConfig& client, std::string& 
         client.uniqueId = "0123456789ABCDEF";
     }
 
+    return true;
+}
+
+bool savePairedHost(const HostConfig& host, std::string& error)
+{
+    int hostIndex = 0;
+
+    // Update an existing entry for this host if we have one (matching on the
+    // host's UUID first, then on its local address).
+    for (int i = 1; i <= 32 && hostIndex == 0; i++) {
+        std::string uuid = CfPrefs::copyString(keyForHost(i, "uuid"));
+        std::string address = CfPrefs::copyString(keyForHost(i, "localaddress"));
+        bool matchesUuid = !host.uuid.empty() && uuid == host.uuid;
+        bool matchesAddress = !host.address.empty() && address == host.address;
+        if (matchesUuid || matchesAddress) {
+            hostIndex = i;
+        }
+    }
+
+    // Otherwise use the first free slot.
+    for (int i = 1; i <= 32 && hostIndex == 0; i++) {
+        if (CfPrefs::copyString(keyForHost(i, "hostname")).empty() &&
+            CfPrefs::copyString(keyForHost(i, "localaddress")).empty()) {
+            hostIndex = i;
+        }
+    }
+
+    if (hostIndex == 0) {
+        error = "No free host slot is available in Moonlight's preferences";
+        return false;
+    }
+
+    CfPrefs::setString(keyForHost(hostIndex, "hostname"), host.name);
+    CfPrefs::setString(keyForHost(hostIndex, "localaddress"), host.address);
+    CfPrefs::setInt(keyForHost(hostIndex, "localport"), host.httpPort);
+    CfPrefs::setString(keyForHost(hostIndex, "uuid"), host.uuid);
+    CfPrefs::setData(keyForHost(hostIndex, "srvcert"), host.serverCertPem);
+    CfPrefs::setBool(keyForHost(hostIndex, "nvidiasw"), host.isNvidiaServerSoftware);
+
+    fprintf(stderr, "Saved paired host '%s' (%s) to preference slot %d\n",
+            host.name.c_str(), host.address.c_str(), hostIndex);
     return true;
 }

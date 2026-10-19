@@ -20,9 +20,7 @@
 
 namespace {
 
-constexpr int kTimeoutSeconds = 15;
-
-int connectTcp(const std::string& host, uint16_t port, std::string& error)
+int connectTcp(const std::string& host, uint16_t port, int timeoutSeconds, std::string& error)
 {
     struct addrinfo hints = {};
     hints.ai_family = AF_UNSPEC;
@@ -43,10 +41,12 @@ int connectTcp(const std::string& host, uint16_t port, std::string& error)
             continue;
         }
 
-        struct timeval timeout = {};
-        timeout.tv_sec = kTimeoutSeconds;
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+        if (timeoutSeconds > 0) {
+            struct timeval timeout = {};
+            timeout.tv_sec = timeoutSeconds;
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+            setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+        }
 
         if (connect(fd, ai->ai_addr, ai->ai_addrlen) == 0) {
             break;
@@ -205,8 +205,13 @@ SSL_CTX* createSslContext(const std::string& clientCertPem,
 
 bool verifyPinnedServerCert(SSL* ssl, const std::string& serverCertPem, std::string& error)
 {
+    // We authenticate the host by pinned certificate rather than the system
+    // trust store (Moonlight hosts use self-signed certificates), so a missing
+    // pin must be treated as a failure rather than silently skipping
+    // verification.
     if (serverCertPem.empty()) {
-        return true;
+        error = "No pinned server certificate is available";
+        return false;
     }
 
     X509* peer = SSL_get1_peer_certificate(ssl);
@@ -274,9 +279,9 @@ bool readAllSsl(SSL* ssl, std::string& response, std::string& error)
 } // namespace
 
 bool httpGet(const std::string& host, uint16_t port, const std::string& path,
-             std::string& response, std::string& error)
+             std::string& response, std::string& error, int timeoutSeconds)
 {
-    int fd = connectTcp(host, port, error);
+    int fd = connectTcp(host, port, timeoutSeconds, error);
     if (fd < 0) {
         return false;
     }
@@ -307,7 +312,7 @@ bool httpsGet(const std::string& host, uint16_t port, const std::string& path,
         return false;
     }
 
-    int fd = connectTcp(host, port, error);
+    int fd = connectTcp(host, port, kDefaultHttpTimeoutSeconds, error);
     if (fd < 0) {
         SSL_CTX_free(ctx);
         return false;

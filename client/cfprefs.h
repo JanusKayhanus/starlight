@@ -13,4 +13,9 @@ int copyInt(const std::string& key, int defaultValue);
 bool copyBool(const std::string& key, bool defaultValue);
 std::string copyData(const std::string& key);
 
+void setString(const std::string& key, const std::string& value);
+void setInt(const std::string& key, int value);
+void setBool(const std::string& key, bool value);
+void setData(const std::string& key, const std::string& value);
+
 } // namespace CfPrefs

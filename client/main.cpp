@@ -14,6 +14,13 @@ int main(int argc, char** argv)
 {
     Path::initialize();
 
+    // Handle the "pair" subcommand before anything else so it can run against a
+    // host that isn't paired (or reachable) yet.
+    int pairExitCode = 0;
+    if (handlePairCommandIfPresent(argc, argv, pairExitCode)) {
+        return pairExitCode;
+    }
+
     // Parse the command line before doing any network or SDL work so that
     // --help and invalid options don't need a reachable host.
     StreamingPreferences* preferences = StreamingPreferences::get();

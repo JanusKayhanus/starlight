@@ -32,11 +32,16 @@ public:
         VDS_FORCE_SOFTWARE
     };
 
-    // macOS renderer selection
+    // macOS renderer selection. The numbering matches the Qt build
+    // (RS_AUTO=0, RS_VULKAN=1, RS_METAL=2, RS_AVSBDL=3) so preferences written
+    // by the Qt build keep their meaning. RS_VULKAN is kept as a reserved slot
+    // because this build has no Vulkan renderer; it is normalized to RS_AUTO
+    // when loaded.
     enum RendererSelection
     {
         RS_PROBE_ONLY = -1, // Only valid for probing decoder properties
         RS_AUTO,
+        RS_VULKAN_RESERVED,
         RS_METAL,
         RS_AVSBDL
     };

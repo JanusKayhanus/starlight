@@ -41,3 +41,8 @@ struct ClientConfig {
 // Reads the already-paired host and client identity from Moonlight's saved
 // preferences. The app intentionally has no settings or pairing UI.
 bool loadMoonlightSettings(HostConfig& host, ClientConfig& client, std::string& error);
+
+// Persists a freshly paired host (name, address, uuid and pinned certificate)
+// into Moonlight's saved preferences, updating the existing entry if the host
+// is already known or adding a new one otherwise.
+bool savePairedHost(const HostConfig& host, std::string& error);

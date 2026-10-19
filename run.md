@@ -74,6 +74,26 @@ pkill -f 'Moonlight.app/Contents/MacOS/Moonlight'
 
 ---
 
+## 2a. Pairing
+
+The client must be paired with a host before it can stream. Pairing is done
+from the terminal and stores the client identity plus the host's pinned
+certificate in Moonlight's preferences.
+
+```sh
+# Pair and prompt for the 4-digit PIN shown on the host
+./build/qtfree/Moonlight.app/Contents/MacOS/Moonlight pair 192.168.0.215
+
+# Pair non-interactively
+./build/qtfree/Moonlight.app/Contents/MacOS/Moonlight pair 192.168.0.215 --pin 1234
+```
+
+If the client was previously paired by the Qt build, the same identity
+(`certificate`, `key`, `uniqueid`) is reused and re-pairing just refreshes the
+stored host certificate.
+
+---
+
 ## 3. CLI flags
 
 | Flag | Meaning |
@@ -126,7 +146,7 @@ Changes take effect on the **next launch**.
 | `yuv444` | bool | YUV 4:4:4 |
 | `videocfg` | int | 0 auto, 1 H.264, 2 HEVC, 4 AV1 |
 | `videodec` | int | 0 auto, 1 force hardware, 2 force software |
-| `renderer` | int | 0 auto, 1 Metal, 2 AVSampleBufferDisplayLayer |
+| `renderer` | int | 0 auto, 2 Metal, 3 AVSampleBufferDisplayLayer. (1 is reserved for the removed Vulkan renderer and is treated as auto.) |
 | `framelatency` | int | 0 default, 1 fast, 2 balanced, 3 smooth |
 | `windowmode` | int | 0 fullscreen, 1 borderless fullscreen (recommended), 2 windowed |
 | `vsync` | bool | V-sync |
@@ -180,7 +200,7 @@ defaults write com.moonlight-stream.Moonlight yuv444 -bool true
 
 # Force HEVC + Metal, smoothest frame pacing, borderless fullscreen
 defaults write com.moonlight-stream.Moonlight videocfg -int 2
-defaults write com.moonlight-stream.Moonlight renderer -int 1
+defaults write com.moonlight-stream.Moonlight renderer -int 2
 defaults write com.moonlight-stream.Moonlight framelatency -int 3
 defaults write com.moonlight-stream.Moonlight windowmode -int 1
 
