@@ -47,4 +47,12 @@ public protocol StreamControlling: AnyObject {
     func stop()
 
     func setScaling(_ mode: ScalingMode)
+
+    /// Brings the stream forward when it plays somewhere other than the
+    /// stream window, such as in the Moonlight client's own window.
+    func activate()
+}
+
+extension StreamControlling {
+    public func activate() {}
 }

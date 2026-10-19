@@ -202,20 +202,23 @@ set_target_properties(Moonlight PROPERTIES
 )
 
 # The Starlight UI (ui/, a Swift package) is the bundle's main executable, so
-# opening Moonlight.app shows it. The streaming client stays next to it as
-# Contents/MacOS/Moonlight, which the UI launches to connect and which can
-# still be run directly from the command line.
+# opening Moonlight.app shows it. It links MoonlightCore for host management.
+# The streaming client stays next to it as Contents/MacOS/Moonlight, which the
+# UI launches to stream and which can still be run from the command line.
 set(STARLIGHT_SWIFT_BUILD_DIR "${CMAKE_BINARY_DIR}/swift")
 set(STARLIGHT_SWIFT_ARGS -c release --package-path "${CMAKE_CURRENT_SOURCE_DIR}/ui"
-                         --scratch-path "${STARLIGHT_SWIFT_BUILD_DIR}")
+                         --scratch-path "${STARLIGHT_SWIFT_BUILD_DIR}"
+                         --product Starlight
+                         -Xlinker "-L$<TARGET_FILE_DIR:MoonlightCore>"
+                         -Xlinker "-L${MOONLIGHT_DEPS}/lib")
 list(LENGTH CMAKE_OSX_ARCHITECTURES STARLIGHT_ARCH_COUNT)
 if(STARLIGHT_ARCH_COUNT GREATER 1)
     foreach(ARCH IN LISTS CMAKE_OSX_ARCHITECTURES)
         list(APPEND STARLIGHT_SWIFT_ARGS --arch "${ARCH}")
     endforeach()
-    set(STARLIGHT_UI_BINARY "${STARLIGHT_SWIFT_BUILD_DIR}/apple/Products/Release/StarlightMockApp")
+    set(STARLIGHT_UI_BINARY "${STARLIGHT_SWIFT_BUILD_DIR}/apple/Products/Release/Starlight")
 else()
-    set(STARLIGHT_UI_BINARY "${STARLIGHT_SWIFT_BUILD_DIR}/release/StarlightMockApp")
+    set(STARLIGHT_UI_BINARY "${STARLIGHT_SWIFT_BUILD_DIR}/release/Starlight")
 endif()
 
 # Always run: swift build is incremental and tracks the package's own sources.
@@ -224,6 +227,7 @@ add_custom_target(StarlightUI
     COMMENT "Building the Starlight UI"
     VERBATIM
 )
+add_dependencies(StarlightUI MoonlightCore)
 
 # Keep the app bundle icon and runtime data files in the executable's
 # Resources directory.

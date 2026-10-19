@@ -25,8 +25,13 @@ public final class SessionModel {
     /// Called once the session is over, however it ended.
     @ObservationIgnored var onEnded: (() -> Void)?
 
+    /// Called with the reason when the stream fails to start or fails while
+    /// running. Sessions without a window use it to show an alert.
+    @ObservationIgnored var onFailure: ((String) -> Void)?
+
     private let controller: any StreamControlling
     @ObservationIgnored private var startTask: Task<Void, Never>?
+    @ObservationIgnored private var didEnd = false
 
     init(request: SessionRequest, host: RemoteHost, app: HostApp, controller: any StreamControlling) {
         self.request = request
@@ -42,8 +47,9 @@ public final class SessionModel {
                 self.window?.close()
             case .failed(let message):
                 self.state = .failed(message: message)
+                self.onFailure?(message)
             }
-            self.onEnded?()
+            self.end()
         }
     }
 
@@ -59,7 +65,9 @@ public final class SessionModel {
             } catch is CancellationError {
                 // The window was closed while connecting.
             } catch {
-                state = .failed(message: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+                let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                state = .failed(message: message)
+                onFailure?(message)
             }
         }
     }
@@ -71,6 +79,13 @@ public final class SessionModel {
         startTask?.cancel()
         controller.stop()
         state = .ended
+        end()
+    }
+
+    /// Reports the end of the session to `onEnded`, once.
+    private func end() {
+        guard !didEnd else { return }
+        didEnd = true
         onEnded?()
     }
 
@@ -86,7 +101,11 @@ public final class SessionModel {
     }
 
     public func bringToFront() {
-        window?.makeKeyAndOrderFront(nil)
+        guard let window else {
+            controller.activate()
+            return
+        }
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate()
     }
 

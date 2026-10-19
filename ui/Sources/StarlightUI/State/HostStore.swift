@@ -28,9 +28,11 @@ public final class HostStore {
     /// Open stream windows, in the order they were opened.
     public private(set) var sessions: [SessionModel] = []
 
-    /// Streams `app` from `host` without a stream window, for hosts the app
-    /// streams some other way. Return false to open the stream window as usual.
-    @ObservationIgnored public var launchesDirectly: ((RemoteHost, HostApp) -> Bool)?
+    /// Whether Connect opens a stream window. Set it to false when the stream
+    /// controller shows the stream itself (for example, in the Moonlight
+    /// client's own window): sessions then run without a window, failures
+    /// show as alerts, and the menu bar extra still lists them.
+    @ObservationIgnored public var opensStreamWindows = true
 
     private let service: any HostService
     private let makeStreamController: @MainActor () -> any StreamControlling
@@ -105,15 +107,31 @@ public final class HostStore {
     }
 
     /// Starts streaming `app` (or the host's default app) from `host`. Returns
-    /// the stream window to open, or nil if there's nothing to open because
-    /// `launchesDirectly` handled it or there's nothing to launch.
+    /// the stream window to open, or nil if there's no window to open, because
+    /// `opensStreamWindows` is false or there's nothing to launch.
     public func connect(to host: RemoteHost, app: HostApp? = nil) -> SessionRequest? {
-        guard let request = sessionRequest(for: host, app: app),
-              let app = host.apps.first(where: { $0.id == request.appID }) else { return nil }
-        if launchesDirectly?(host, app) == true {
-            return nil
+        guard let request = sessionRequest(for: host, app: app) else { return nil }
+        if opensStreamWindows {
+            return request
         }
-        return request
+        startSessionWithoutWindow(for: request)
+        return nil
+    }
+
+    private func startSessionWithoutWindow(for request: SessionRequest) {
+        if let running = sessions.first(where: { $0.request == request }) {
+            running.bringToFront()
+            return
+        }
+        guard let model = session(for: request) else { return }
+
+        let hostName = model.host.name
+        model.onFailure = { [weak self, weak model] message in
+            self?.presentedError = StarlightError(title: "Couldn’t connect to “\(hostName)”", message: message)
+            model?.stop()
+        }
+        // The controller draws nowhere, so it gets a surface no window shows.
+        model.start(on: StreamSurfaceView(frame: .zero))
     }
 
     public func wake(_ host: RemoteHost) {

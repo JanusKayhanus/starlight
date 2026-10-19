@@ -21,13 +21,6 @@ struct MockStarlightApp: App {
         let hostService = MockHostService()
         let store = HostStore(service: hostService,
                               makeStreamController: { MockStreamController(hostService: hostService) })
-
-        // The first computer streams for real, straight into the client's window.
-        let launcher = HardcodedHostLauncher()
-        launcher.onFailure = { host, message in
-            store.presentedError = StarlightError(title: "Couldn’t connect to “\(host.name)”", message: message)
-        }
-        store.launchesDirectly = { host, _ in launcher.launch(host) }
         store.start()
         _store = State(initialValue: store)
     }
