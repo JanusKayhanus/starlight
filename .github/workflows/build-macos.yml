@@ -1,0 +1,56 @@
+---
+name: Build - macOS
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      ci_version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    env:
+      CI_VERSION: ${{ inputs.ci_version }}
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        with:
+          submodules: 'recursive'
+          fetch-depth: 1
+
+      - name: Install create-dmg
+        run: |
+          brew install node
+          npm install --global create-dmg
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          cache: true
+          set-env: true
+          add-tools-to-path: true
+          version: 6.11.2
+          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@073e34d7c2ab4ae6961ed7cca690b3abd5ba5a7e'
+
+      - name: Build Package
+        run: bash scripts/generate-dmg.sh Release
+
+      - name: Upload Binaries
+        uses: actions/upload-artifact@v6
+        with:
+          name: Moonlight-macOS-${{ env.CI_VERSION }}
+          path: build/installer-Release/*.dmg
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload Symbols
+        uses: actions/upload-artifact@v6
+        with:
+          name: zDevDbgSyms-macOS-${{ env.CI_VERSION }}
+          path: build/installer-*/*.dsym/*
+          if-no-files-found: error

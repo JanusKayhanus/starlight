@@ -1,6 +1,8 @@
-import QtQuick 2.0
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Controls.impl
 
-// Monochrome icon. Our icons are already white for the dark Material theme.
-// The macOS variant tints them to match the system appearance.
-Image {
+// Monochrome icon tinted to match the system appearance
+IconImage {
+    color: palette.windowText
 }

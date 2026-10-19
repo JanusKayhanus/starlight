@@ -62,9 +62,6 @@ NavigableDialog {
         standardButtons: dialog.standardButtons
 
         delegate: Button {
-            // Dialog buttons are bordered push buttons on macOS
-            flat: !nativeMacStyle
-
             Keys.onReturnPressed: clicked()
             Keys.onEnterPressed: clicked()
             Keys.onRightPressed: nextItemInFocusChain(true).forceActiveFocus(Qt.TabFocus)

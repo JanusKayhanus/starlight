@@ -2,8 +2,6 @@ import QtQuick 2.9
 import QtQuick.Controls 2.3
 import QtQuick.Layouts 1.3
 import QtQuick.Window 2.2
-// Aliased so this doesn't override the controls of the native macOS style on Qt 6
-import QtQuick.Controls.Material 2.2 as M
 
 import ComputerManager 1.0
 import AutoUpdateChecker 1.0
@@ -16,51 +14,34 @@ ApplicationWindow {
 
 
     id: window
-    width: nativeMacStyle ? 1180 : 1280
-    height: nativeMacStyle ? 760 : 600
-    minimumWidth: nativeMacStyle ? 760 : 0
-    minimumHeight: nativeMacStyle ? 520 : 0
+    width: 1180
+    height: 760
+    minimumWidth: 760
+    minimumHeight: 520
 
     // This function runs prior to creation of the initial StackView item
     function doEarlyInit() {
-        // Override the background color to Material 2 colors for Qt 6.5+
-        // in order to improve contrast between GFE's placeholder box art
-        // and the background of the app grid.
-        if (SystemProperties.usesMaterial3Theme && !nativeMacStyle) {
-            M.Material.background = "#303030"
-        }
-
         SdlGamepadKeyNavigation.enable()
     }
 
     Component.onCompleted: {
-        if (nativeMacStyle) {
-            // The launcher and toolbar extend under the title bar themselves,
-            // so don't inset the content by the title bar's safe area
-            topPadding = 0
-        }
+        // The launcher and toolbar extend under the title bar themselves,
+        // so don't inset the content by the title bar's safe area
+        topPadding = 0
 
         // Show the window according to the user's preferences
-        if (SystemProperties.hasDesktopEnvironment) {
-            if (StreamingPreferences.uiDisplayMode == StreamingPreferences.UI_MAXIMIZED) {
-                window.showMaximized()
-            }
-            else if (StreamingPreferences.uiDisplayMode == StreamingPreferences.UI_FULLSCREEN) {
-                window.showFullScreen()
-            }
-            else {
-                window.show()
-            }
-        } else {
+        if (StreamingPreferences.uiDisplayMode == StreamingPreferences.UI_MAXIMIZED) {
+            window.showMaximized()
+        }
+        else if (StreamingPreferences.uiDisplayMode == StreamingPreferences.UI_FULLSCREEN) {
             window.showFullScreen()
+        }
+        else {
+            window.show()
         }
 
         // Display any modal dialogs for configuration warnings
         if (runConfigChecks) {
-            if (SystemProperties.isWow64) {
-                wow64Dialog.open()
-            }
-
             // Hardware acceleration and unmapped gamepads are checked asynchronously
             SystemProperties.hasHardwareAccelerationChanged.connect(hasHardwareAccelerationChanged)
             SystemProperties.unmappedGamepadsChanged.connect(hasUnmappedGamepadsChanged)
@@ -70,12 +51,7 @@ ApplicationWindow {
 
     function hasHardwareAccelerationChanged() {
         if (!SystemProperties.hasHardwareAcceleration && StreamingPreferences.videoDecoderSelection !== StreamingPreferences.VDS_FORCE_SOFTWARE) {
-            if (SystemProperties.isRunningXWayland) {
-                xWaylandDialog.open()
-            }
-            else {
-                noHwDecoderDialog.open()
-            }
+            noHwDecoderDialog.open()
         }
     }
 
@@ -98,7 +74,10 @@ ApplicationWindow {
 
     // This configures the maximum width of the singleton attached QML ToolTip. If left unconstrained,
     // it will never insert a line break and just extend on forever.
-    ToolTip.toolTip.contentWidth: Math.min(tooltipTextLayoutHelper.width, 400)
+    Item {
+        visible: false
+        ToolTip.toolTip.contentWidth: Math.min(tooltipTextLayoutHelper.width, 400)
+    }
 
     function goBack() {
         stackView.pop()
@@ -234,6 +213,11 @@ ApplicationWindow {
     // Native menu bar on macOS
     AppMenuBar {}
 
+    Shortcut {
+        sequence: StandardKey.New
+        onActivated: addPcDialog.open()
+    }
+
     // macOS toolbar background, which also lets the window be dragged from the toolbar
     // since the toolbar takes the place of the title bar (see MacOSWindow::useUnifiedTitleBar)
     Component {
@@ -263,45 +247,32 @@ ApplicationWindow {
         id: toolBar
         // The launcher draws its own title bar
         visible: !(stackView.currentItem instanceof LauncherView)
-        height: nativeMacStyle ? 52 : 60
+        height: 52
         anchors.topMargin: 5
         anchors.bottomMargin: 5
 
         Component.onCompleted: {
-            if (nativeMacStyle) {
-                background = macToolBarBackground.createObject(toolBar)
+            background = macToolBarBackground.createObject(toolBar)
 
-                // The toolbar replaces the title bar, so ignore the title bar's safe area
-                topPadding = 0
-                bottomPadding = 0
-                leftPadding = 0
-                rightPadding = 0
-            }
-        }
-
-        Label {
-            id: titleLabel
-            visible: toolBar.width > 700 && !nativeMacStyle
-            anchors.fill: parent
-            text: stackView.currentItem.objectName
-            font.pointSize: 20
-            elide: Label.ElideRight
-            horizontalAlignment: Qt.AlignHCenter
-            verticalAlignment: Qt.AlignVCenter
+            // The toolbar replaces the title bar, so ignore the title bar's safe area
+            topPadding = 0
+            bottomPadding = 0
+            leftPadding = 0
+            rightPadding = 0
         }
 
         RowLayout {
-            spacing: nativeMacStyle ? 4 : 10
+            spacing: 4
             // Leave room for the traffic light buttons on macOS
-            anchors.leftMargin: nativeMacStyle && window.visibility !== Window.FullScreen ? 84 : 10
-            anchors.rightMargin: nativeMacStyle ? 12 : 10
+            anchors.leftMargin: window.visibility !== Window.FullScreen ? 84 : 10
+            anchors.rightMargin: 12
             anchors.fill: parent
 
             NavigableToolButton {
                 // Only make the button visible if the user has navigated somewhere.
                 visible: stackView.depth > 1
 
-                iconSource: nativeMacStyle ? "qrc:/res/chevron_left.svg" : "qrc:/res/arrow_left.svg"
+                iconSource: "qrc:/res/chevron_left.svg"
 
                 onClicked: goBack()
 
@@ -314,44 +285,17 @@ ApplicationWindow {
             // we need to ensure the toolbar controls don't collide
             Label {
                 id: titleRowLabel
-                font.pointSize: nativeMacStyle ? 15 : titleLabel.font.pointSize
-                font.weight: nativeMacStyle ? Font.Bold : Font.Normal
-                leftPadding: nativeMacStyle ? 6 : 0
+                font.pointSize: 15
+                font.weight: Font.Bold
+                leftPadding: 6
                 elide: Label.ElideRight
-                horizontalAlignment: nativeMacStyle ? Qt.AlignLeft : Qt.AlignHCenter
+                horizontalAlignment: Qt.AlignLeft
                 verticalAlignment: Qt.AlignVCenter
                 Layout.fillWidth: true
 
                 // We need this label to always be visible so it can occupy
-                // the remaining space in the RowLayout. To "hide" it, we
-                // just set the text to empty string.
-                text: !titleLabel.visible ? stackView.currentItem.objectName : ""
-            }
-
-            NavigableToolButton {
-                id: addPcButton
-                visible: stackView.currentItem instanceof PcView
-
-                iconSource:  "qrc:/res/ic_add_to_queue_white_48px.svg"
-
-                ToolTip.delay: 1000
-                ToolTip.timeout: 3000
-                ToolTip.visible: hovered
-                ToolTip.text: qsTr("Add PC manually") + (newPcShortcut.nativeText ? (" ("+newPcShortcut.nativeText+")") : "")
-
-                Shortcut {
-                    id: newPcShortcut
-                    sequence: StandardKey.New
-                    onActivated: addPcButton.clicked()
-                }
-
-                onClicked: {
-                    addPcDialog.open()
-                }
-
-                Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocus)
-                }
+                // the remaining space in the RowLayout.
+                text: stackView.currentItem.objectName
             }
 
             NavigableToolButton {
@@ -371,9 +315,7 @@ ApplicationWindow {
                 visible: false
 
                 onClicked: {
-                    if (SystemProperties.hasBrowser) {
-                        Qt.openUrlExternally(browserUrl);
-                    }
+                    Qt.openUrlExternally(browserUrl);
                 }
 
                 function updateAvailable(version, url)
@@ -395,8 +337,6 @@ ApplicationWindow {
 
             NavigableToolButton {
                 id: helpButton
-                visible: SystemProperties.hasBrowser
-
                 iconSource: "qrc:/res/question_mark.svg"
 
                 ToolTip.delay: 1000
@@ -472,23 +412,6 @@ ApplicationWindow {
                    "Your streaming performance may be severely degraded in this configuration.")
         helpText: qsTr("Click the Help button for more information on solving this problem.")
         helpUrl: "https://github.com/moonlight-stream/moonlight-docs/wiki/Fixing-Hardware-Decoding-Problems"
-    }
-
-    ErrorMessageDialog {
-        id: xWaylandDialog
-        text: qsTr("Hardware acceleration doesn't work on XWayland. Continuing on XWayland may result in poor streaming performance. " +
-                   "Try running with QT_QPA_PLATFORM=wayland or switch to X11.")
-        helpText: qsTr("Click the Help button for more information.")
-        helpUrl: "https://github.com/moonlight-stream/moonlight-docs/wiki/Fixing-Hardware-Decoding-Problems"
-    }
-
-    NavigableMessageDialog {
-        id: wow64Dialog
-        standardButtons: Dialog.Ok | Dialog.Cancel
-        text: qsTr("This version of Moonlight isn't optimized for your PC. Please download the '%1' version of Moonlight for the best streaming performance.").arg(SystemProperties.friendlyNativeArchName)
-        onAccepted: {
-            Qt.openUrlExternally("https://github.com/moonlight-stream/moonlight-qt/releases");
-        }
     }
 
     ErrorMessageDialog {

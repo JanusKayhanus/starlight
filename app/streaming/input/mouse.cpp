@@ -4,19 +4,13 @@
 #include "SDL_compat.h"
 #include "streaming/streamutils.h"
 
-#ifdef Q_OS_DARWIN
 #include "macoscursor.h"
-#endif
 
 void SdlInputHandler::notifyMouseLeave()
 {
     if (m_NeedsManualCaptureOnLeave) {
-        // SDL on Windows doesn't send the mouse button up until the mouse re-enters the window
-        // after leaving it. This breaks some of the Aero snap gestures, so we'll capture it to
-        // allow us to receive the mouse button up events later.
-        //
-        // On macOS and X11, capturing the mouse allows us to receive mouse motion outside the
-        // window (button up already worked without capture).
+        // Capturing the mouse allows us to receive mouse motion outside the window
+        // (button up already works without capture).
         if (m_AbsoluteMouseMode && isCaptureActive()) {
             // NB: Not using SDL_GetGlobalMouseState() because we want our state not the system's
             Uint32 mouseState = SDL_GetMouseState(nullptr, nullptr);
@@ -209,11 +203,9 @@ void SdlInputHandler::handleMouseWheelEvent(SDL_MouseWheelEvent* event)
             event->preciseY = -event->preciseY;
         }
 
-#ifdef Q_OS_DARWIN
-        // HACK: Clamp the scroll values on macOS to prevent OS scroll acceleration
+        // HACK: Clamp the scroll values to prevent OS scroll acceleration
         // from generating wild scroll deltas when scrolling quickly.
         event->preciseY = SDL_clamp(event->preciseY, -1.0f, 1.0f);
-#endif
 
         LiSendHighResScrollEvent((short)(event->preciseY * 120)); // WHEEL_DELTA
     }
@@ -224,11 +216,9 @@ void SdlInputHandler::handleMouseWheelEvent(SDL_MouseWheelEvent* event)
             event->preciseX = -event->preciseX;
         }
 
-#ifdef Q_OS_DARWIN
-        // HACK: Clamp the scroll values on macOS to prevent OS scroll acceleration
+        // HACK: Clamp the scroll values to prevent OS scroll acceleration
         // from generating wild scroll deltas when scrolling quickly.
         event->preciseX = SDL_clamp(event->preciseX, -1.0f, 1.0f);
-#endif
 
         LiSendHighResHScrollEvent((short)(event->preciseX * 120)); // WHEEL_DELTA
     }
@@ -239,10 +229,8 @@ void SdlInputHandler::handleMouseWheelEvent(SDL_MouseWheelEvent* event)
             event->y = -event->y;
         }
 
-#ifdef Q_OS_DARWIN
         // See comment above
         event->y = SDL_clamp(event->y, -1, 1);
-#endif
 
         LiSendScrollEvent((signed char)event->y);
     }
@@ -253,10 +241,8 @@ void SdlInputHandler::handleMouseWheelEvent(SDL_MouseWheelEvent* event)
             event->x = -event->x;
         }
 
-#ifdef Q_OS_DARWIN
         // See comment above
         event->x = SDL_clamp(event->x, -1, 1);
-#endif
 
         LiSendHScrollEvent((signed char)event->x);
     }
@@ -290,9 +276,7 @@ void SdlInputHandler::updatePointerRegionLock()
 {
     // Pointer region lock is irrelevant in relative mouse mode
     if (SDL_GetRelativeMouseMode()) {
-#ifdef Q_OS_DARWIN
         MacOSCursor::confineToRegion(m_Window, nullptr, false);
-#endif
         return;
     }
 
@@ -341,7 +325,6 @@ void SdlInputHandler::updatePointerRegionLock()
 #endif
     }
 
-#ifdef Q_OS_DARWIN
     // SDL's mouse rect doesn't stop the cursor from escaping into the menu bar and
     // notch area above a fullscreen window, which also reveals the menu bar over the
     // stream. While captured in fullscreen, we stop the cursor at the top edge of the
@@ -364,5 +347,4 @@ void SdlInputHandler::updatePointerRegionLock()
     else {
         MacOSCursor::confineToRegion(m_Window, nullptr, false);
     }
-#endif
 }

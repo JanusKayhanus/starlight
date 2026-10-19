@@ -30,12 +30,6 @@ public:
     bool hasFastAes();
 
     static
-    int getDrmFdForWindow(SDL_Window* window, bool* needsClose);
-
-    static
-    int getDrmFd(bool preferRenderNode);
-
-    static
     void enterAsyncLoggingMode();
 
     static

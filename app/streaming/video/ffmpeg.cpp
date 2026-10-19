@@ -13,49 +13,12 @@ extern "C" {
 }
 
 #include "ffmpeg-renderers/sdlvid.h"
-#include "ffmpeg-renderers/genhwaccel.h"
-
-#ifdef Q_OS_WIN32
-#include "ffmpeg-renderers/dxva2.h"
-#include "ffmpeg-renderers/d3d11va.h"
-#endif
-
-#ifdef Q_OS_DARWIN
 #include "ffmpeg-renderers/vt.h"
-#endif
-
-#ifdef HAVE_LIBVA
-#include "ffmpeg-renderers/vaapi.h"
-#endif
-
-#ifdef HAVE_LIBVDPAU
-#include "ffmpeg-renderers/vdpau.h"
-#endif
-
-#ifdef HAVE_MMAL
-#include "ffmpeg-renderers/mmal.h"
-#endif
-
-#ifdef HAVE_DRM
-#include "ffmpeg-renderers/drm.h"
-#endif
-
-#ifdef HAVE_EGL
-#include "ffmpeg-renderers/eglvid.h"
-#endif
-
-#ifdef HAVE_CUDA
-#include "ffmpeg-renderers/cuda.h"
-#endif
-
-#ifdef HAVE_LIBPLACEBO_VULKAN
-#include "ffmpeg-renderers/plvk.h"
-#endif
 
 // This is gross but it allows us to use sizeof()
 #include "ffmpeg_videosamples.cpp"
 
-#define MAX_DECODER_PASS 2
+#define MAX_DECODER_PASS 1
 
 #define MAX_SPS_EXTRA_SIZE 16
 
@@ -113,39 +76,6 @@ int FFmpegVideoDecoder::getDecoderCapabilities()
 
             // Enable AV1 RFI when using the libdav1d software decoder
             capabilities |= CAPABILITY_REFERENCE_FRAME_INVALIDATION_AV1;
-        }
-        else if (m_HwDecodeCfg == nullptr) {
-            // Note: This is NOT an exhaustive list of all decoders
-            // that Moonlight could pick. It will pick any working
-            // decoder that matches the codec ID and outputs one of
-            // the pixel formats that we have a renderer for.
-            static const QMap<QString, int> nonHwaccelCodecInfo = {
-                // H.264
-                {"h264_mmal", 0},
-                {"h264_rkmpp", 0},
-                {"h264_nvv4l2", 0},
-                {"h264_nvmpi", 0},
-                {"h264_v4l2m2m", 0},
-                {"h264_omx", 0},
-
-                // HEVC
-                {"hevc_rkmpp", 0},
-                {"hevc_nvv4l2", CAPABILITY_REFERENCE_FRAME_INVALIDATION_HEVC},
-                {"hevc_nvmpi", 0},
-                {"hevc_v4l2m2m", 0},
-                {"hevc_omx", 0},
-
-                // AV1
-            };
-
-            // We have a non-hwaccel hardware decoder. This will always
-            // be using SDLRenderer/DrmRenderer/PlVkRenderer so we will
-            // pick decoder capabilities based on the decoder name.
-            capabilities = nonHwaccelCodecInfo.value(m_VideoDecoderCtx->codec->name, 0);
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "Using capabilities table for decoder: %s -> %d",
-                        m_VideoDecoderCtx->codec->name,
-                        capabilities);
         }
     }
 
@@ -337,139 +267,15 @@ bool FFmpegVideoDecoder::initializeRendererInternal(IFFmpegRenderer* renderer, P
     return true;
 }
 
-bool FFmpegVideoDecoder::createFrontendRenderer(PDECODER_PARAMETERS params, bool useAlternateFrontend)
+bool FFmpegVideoDecoder::createFrontendRenderer(PDECODER_PARAMETERS params)
 {
-    bool glIsSlow;
-    bool vulkanIsSlow;
-
-    if (!Utils::getEnvironmentVariableOverride("GL_IS_SLOW", &glIsSlow)) {
-#ifdef GL_IS_SLOW
-        glIsSlow = true;
-#else
-        glIsSlow = WMUtils::isGpuSlow();
-#endif
-    }
-
-    if (!Utils::getEnvironmentVariableOverride("VULKAN_IS_SLOW", &vulkanIsSlow)) {
-#ifdef VULKAN_IS_SLOW
-        vulkanIsSlow = true;
-#else
-        vulkanIsSlow = WMUtils::isGpuSlow();
-#endif
-    }
-
-    Q_UNUSED(glIsSlow);
-    Q_UNUSED(vulkanIsSlow);
-
-    // For cases where we're already using Vulkan Video decoding, always use the Vulkan renderer too.
-    // The alternate frontend logic is primarily for cases where a different renderer like EGL or DRM
-    // may provide additional performance or HDR capabilities. Neither of these are true for Vulkan.
-    if (useAlternateFrontend && m_BackendRenderer->getRendererType() != IFFmpegRenderer::RendererType::Vulkan) {
-        if (params->videoFormat & VIDEO_FORMAT_MASK_10BIT) {
-#ifdef HAVE_LIBPLACEBO_VULKAN
-            if (!vulkanIsSlow) {
-                // The Vulkan renderer can also handle HDR with a supported compositor. We prefer
-                // rendering HDR with Vulkan if possible since it's more fully featured than DRM.
-                m_FrontendRenderer = new PlVkRenderer(AV_HWDEVICE_TYPE_NONE, m_BackendRenderer);
-                if (initializeRendererInternal(m_FrontendRenderer, params) && (m_FrontendRenderer->getRendererAttributes() & RENDERER_ATTRIBUTE_HDR_SUPPORT)) {
-                    return true;
-                }
-                delete m_FrontendRenderer;
-                m_FrontendRenderer = nullptr;
-            }
-#endif
-
-#ifdef HAVE_DRM
-            // If we're trying to stream HDR, we need to use the DRM renderer in direct
-            // rendering mode so it can set the HDR metadata on the display. EGL does
-            // not currently support this (and even if it did, Mesa and Wayland don't
-            // currently have protocols to actually get that metadata to the display).
-            if (m_BackendRenderer->canExportDrmPrime()) {
-                m_FrontendRenderer = new DrmRenderer(AV_HWDEVICE_TYPE_NONE, m_BackendRenderer);
-                if (initializeRendererInternal(m_FrontendRenderer, params) && (m_FrontendRenderer->getRendererAttributes() & RENDERER_ATTRIBUTE_HDR_SUPPORT)) {
-                    return true;
-                }
-                delete m_FrontendRenderer;
-                m_FrontendRenderer = nullptr;
-            }
-#endif
-
-#ifdef HAVE_LIBPLACEBO_VULKAN
-            if (vulkanIsSlow) {
-                // Try Vulkan even if it's slow because we have no other renderer
-                // that can display HDR properly on Linux.
-                m_FrontendRenderer = new PlVkRenderer(AV_HWDEVICE_TYPE_NONE, m_BackendRenderer);
-                if (initializeRendererInternal(m_FrontendRenderer, params) && (m_FrontendRenderer->getRendererAttributes() & RENDERER_ATTRIBUTE_HDR_SUPPORT)) {
-                    return true;
-                }
-                delete m_FrontendRenderer;
-                m_FrontendRenderer = nullptr;
-            }
-#endif
-        }
-        else
-        {
-#ifdef HAVE_LIBPLACEBO_VULKAN
-            if (qgetenv("PREFER_VULKAN") == "1") {
-                m_FrontendRenderer = new PlVkRenderer(AV_HWDEVICE_TYPE_NONE, m_BackendRenderer);
-                if (initializeRendererInternal(m_FrontendRenderer, params)) {
-                    return true;
-                }
-                delete m_FrontendRenderer;
-                m_FrontendRenderer = nullptr;
-            }
-#endif
-        }
-
-#ifdef HAVE_EGL
-        // Try EGLRenderer if GL is not slow on this platform
-        if (!glIsSlow && m_BackendRenderer->canExportEGL()) {
-            m_FrontendRenderer = new EGLRenderer(m_BackendRenderer);
-            if (initializeRendererInternal(m_FrontendRenderer, params)) {
-                return true;
-            }
-            delete m_FrontendRenderer;
-            m_FrontendRenderer = nullptr;
-        }
-#endif
-
-        // If we made it here, we failed to create the EGLRenderer
-        return false;
-    }
-
     if (m_BackendRenderer->isDirectRenderingSupported()) {
         // The backend renderer can render to the display
         m_FrontendRenderer = m_BackendRenderer;
     }
     else {
         // The backend renderer cannot directly render to the display, so
-        // we will create an SDL or DRM renderer to draw the frames.
-
-#ifdef HAVE_DRM
-        if (glIsSlow || vulkanIsSlow) {
-            // Try DrmRenderer first if we have a slow GPU
-            m_FrontendRenderer = new DrmRenderer(AV_HWDEVICE_TYPE_NONE, m_BackendRenderer);
-            if (initializeRendererInternal(m_FrontendRenderer, params)) {
-                return true;
-            }
-            delete m_FrontendRenderer;
-            m_FrontendRenderer = nullptr;
-        }
-#endif
-
-#ifdef HAVE_EGL
-        // We explicitly skipped EGL in the GL_IS_SLOW case above.
-        // If DRM didn't work either, try EGL now.
-        if (glIsSlow && m_BackendRenderer->canExportEGL()) {
-            m_FrontendRenderer = new EGLRenderer(m_BackendRenderer);
-            if (initializeRendererInternal(m_FrontendRenderer, params)) {
-                return true;
-            }
-            delete m_FrontendRenderer;
-            m_FrontendRenderer = nullptr;
-        }
-#endif
-
+        // draw frames through the SDL renderer instead.
         m_FrontendRenderer = new SdlRenderer();
         if (!initializeRendererInternal(m_FrontendRenderer, params)) {
             return false;
@@ -479,13 +285,13 @@ bool FFmpegVideoDecoder::createFrontendRenderer(PDECODER_PARAMETERS params, bool
     return true;
 }
 
-bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVPixelFormat requiredFormat, PDECODER_PARAMETERS params, TestMode testMode, bool useAlternateFrontend)
+bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVPixelFormat requiredFormat, PDECODER_PARAMETERS params, TestMode testMode)
 {
     // In test-only mode, we should only see test frames
     SDL_assert(!m_TestOnly || testMode != TestMode::NoTesting);
 
     // Create the frontend renderer based on the capabilities of the backend renderer
-    if (!createFrontendRenderer(params, useAlternateFrontend)) {
+    if (!createFrontendRenderer(params)) {
         return false;
     }
 
@@ -549,11 +355,9 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
     m_VideoDecoderCtx->extra_hw_frames = PACER_MAX_OUTSTANDING_FRAMES;
 
     // For non-hwaccel decoders, set the pix_fmt to hint to the decoder which
-    // format should be used. This is necessary for certain decoders like the
-    // out-of-tree nvv4l2dec decoders for L4T platforms. We do not do this
-    // for hwaccel decoders because it causes the AV1 Vulkan video decoder in
-    // FFmpeg 7.0-8.0 to incorrectly believe ff_get_format() was called.
-    // See #1511.
+    // format should be used. We do not do this for hwaccel decoders because
+    // it can cause hardware decoders to incorrectly believe ff_get_format()
+    // was called.
     if (m_HwDecodeCfg == nullptr) {
         m_VideoDecoderCtx->pix_fmt = (requiredFormat != AV_PIX_FMT_NONE) ?
             requiredFormat : m_FrontendRenderer->getPreferredPixelFormat(params->videoFormat);
@@ -668,7 +472,7 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
                 return false;
             }
 
-            // A few FFmpeg decoders (h264_mmal) process here using a "pull" model.
+            // Some FFmpeg decoders process here using a "pull" model.
             // Those decoders will fail here if the format is not supported.
 #if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(62, 28, 100)
             err = avcodec_receive_frame_flags(m_VideoDecoderCtx, frame,
@@ -992,156 +796,38 @@ void FFmpegVideoDecoder::logVideoStats(VIDEO_STATS& stats, const char* title)
 
 IFFmpegRenderer* FFmpegVideoDecoder::createHwAccelRenderer(const AVCodecHWConfig* hwDecodeCfg, PDECODER_PARAMETERS params, int pass)
 {
-    Q_UNUSED(params);
-
     if (!(hwDecodeCfg->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX)) {
         return nullptr;
     }
 
-    // First pass using our top-tier hwaccel implementations
-    if (pass == 0) {
-        switch (hwDecodeCfg->device_type) {
-#ifdef Q_OS_WIN32
-        // DXVA2 appears in the hwaccel list before D3D11VA, so we only check for D3D11VA
-        // on the first pass to ensure we prefer D3D11VA over DXVA2.
-        case AV_HWDEVICE_TYPE_D3D11VA:
-            return new D3D11VARenderer(pass);
-#endif
-#ifdef Q_OS_DARWIN
-        case AV_HWDEVICE_TYPE_VIDEOTOOLBOX:
-            // Use the libplacebo (on MoltenVK) renderer only if it was explicitly
-            // selected, or as the automatic default on Intel Macs. On Apple Silicon
-            // we prefer the native Metal renderer, which avoids the Vulkan/MoltenVK
-            // translation layer and the per-frame libplacebo texture churn,
-            // reducing CPU usage and power draw.
-#ifdef HAVE_LIBPLACEBO_VULKAN
-            if (params->renderer == StreamingPreferences::RS_VULKAN ||
-                    (params->renderer == StreamingPreferences::RS_AUTO && !VTSystemInfo::isAppleSilicon())) {
-                return new PlVkRenderer(hwDecodeCfg->device_type);
-            }
-#endif
-            if (params->renderer == StreamingPreferences::RS_AVSBDL) {
-                return VTRendererFactory::createRenderer();
-            }
-            else {
-                // This covers Metal explicitly selected, the Apple Silicon
-                // automatic default, and probe-only (since Metal is cheap to
-                // instantiate)
-                return VTMetalRendererFactory::createRenderer(true);
-            }
-#endif
-#ifdef HAVE_LIBVA
-        case AV_HWDEVICE_TYPE_VAAPI:
-            return new VAAPIRenderer(pass);
-#endif
-#ifdef HAVE_LIBVDPAU
-        case AV_HWDEVICE_TYPE_VDPAU:
-            return new VDPAURenderer(pass);
-#endif
-#ifdef HAVE_DRM
-        case AV_HWDEVICE_TYPE_DRM:
-            return new DrmRenderer(hwDecodeCfg->device_type);
-#endif
-#ifdef HAVE_LIBPLACEBO_VULKAN
-        case AV_HWDEVICE_TYPE_VULKAN:
-            return new PlVkRenderer(hwDecodeCfg->device_type);
-#endif
-        default:
-            switch (hwDecodeCfg->pix_fmt) {
-#ifdef HAVE_DRM
-            case AV_PIX_FMT_DRM_PRIME:
-                // Support out-of-tree non-DRM hwaccels that output DRM_PRIME frames
-                // https://patchwork.ffmpeg.org/project/ffmpeg/list/?series=12604
-                return new DrmRenderer(hwDecodeCfg->device_type);
-#endif
-            default:
-                return nullptr;
-            }
-        }
-    }
-    // Second pass for our second-tier hwaccel implementations
-    else if (pass == 1) {
-        switch (hwDecodeCfg->device_type) {
-#ifdef HAVE_CUDA
-        case AV_HWDEVICE_TYPE_CUDA:
-            // CUDA should only be used to cover the NVIDIA+Wayland case
-            return new CUDARenderer();
-#endif
-#ifdef Q_OS_WIN32
-        // This gives us another shot if D3D11VA failed in the first pass.
-        // Since DXVA2 is in the hwaccel list first, we'll first try to fall back
-        // to that before giving D3D11VA another try as a last resort.
-        case AV_HWDEVICE_TYPE_DXVA2:
-            return new DXVA2Renderer(pass);
-        case AV_HWDEVICE_TYPE_D3D11VA:
-            return new D3D11VARenderer(pass);
-#endif
-#ifdef Q_OS_DARWIN
-        case AV_HWDEVICE_TYPE_VIDEOTOOLBOX:
-            // Use the older AVSampleBufferDisplayLayer if Metal cannot be used
-            return VTRendererFactory::createRenderer();
-#endif
-#ifdef HAVE_LIBVA
-        case AV_HWDEVICE_TYPE_VAAPI:
-            return new VAAPIRenderer(pass);
-#endif
-#ifdef HAVE_LIBVDPAU
-        case AV_HWDEVICE_TYPE_VDPAU:
-            return new VDPAURenderer(pass);
-#endif
-        default:
-            return nullptr;
-        }
-    }
-    // Third pass for the generic hwaccel backend if we didn't have a specific renderer for
-    // any supported hwaccel device type exposed by this decoder.
-    else if (pass == 2) {
-        switch (hwDecodeCfg->device_type) {
-        case AV_HWDEVICE_TYPE_VDPAU:
-        case AV_HWDEVICE_TYPE_CUDA:
-        case AV_HWDEVICE_TYPE_VAAPI:
-        case AV_HWDEVICE_TYPE_DXVA2:
-        case AV_HWDEVICE_TYPE_QSV: // Covered by VAAPI and D3D11VA/DXVA2
-        case AV_HWDEVICE_TYPE_VIDEOTOOLBOX:
-        case AV_HWDEVICE_TYPE_D3D11VA:
-        case AV_HWDEVICE_TYPE_DRM:
-#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(56, 39, 100)
-        case AV_HWDEVICE_TYPE_VULKAN:
-#endif
-#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(58, 36, 100)
-        case AV_HWDEVICE_TYPE_D3D12VA: // Covered by D3D11VA
-#endif
-            // If we have a specific renderer for this hwaccel device type, never allow it to fall back
-            // to the GenericHwAccelRenderer.
-            //
-            // If we reach this path for a known device type that we support above, it means either:
-            // a) The build was missing core hwaccel libraries and we should break loudly in that case.
-            // b) The renderer rejected the device for some reason and we shouldn't second guess it.
-            return nullptr;
-
-        default:
-            if (hwDecodeCfg->pix_fmt != AV_PIX_FMT_DRM_PRIME) {
-                return new GenericHwAccelRenderer(hwDecodeCfg->device_type);
-            }
-            else {
-                // We already handle unknown devices types that
-                // output DRM_PRIME frames above in pass 0.
-                return nullptr;
-            }
-        }
-    }
-    else {
-        SDL_assert(false);
+    // VideoToolbox is the only hardware decoder available on macOS.
+    if (hwDecodeCfg->device_type != AV_HWDEVICE_TYPE_VIDEOTOOLBOX) {
         return nullptr;
     }
+
+    if (pass == 0) {
+        if (params->renderer == StreamingPreferences::RS_AVSBDL) {
+            return VTRendererFactory::createRenderer();
+        }
+        else {
+            // This covers Metal explicitly selected, the automatic default,
+            // and probe-only (since Metal is cheap to instantiate)
+            return VTMetalRendererFactory::createRenderer(true);
+        }
+    }
+    else if (pass == 1) {
+        // Use the older AVSampleBufferDisplayLayer if Metal cannot be used
+        return VTRendererFactory::createRenderer();
+    }
+
+    return nullptr;
 }
 
 bool FFmpegVideoDecoder::isSeparateTestDecoderRequired(const AVCodec* decoder)
 {
     // We can generally reuse the test decoder for real rendering as long as
     // the decoder can handle a change in surface sizes while streaming.
-    // We know v4l2m2m can't handle this (see comment below), so let's just
-    // opt-out all non-hwaccel decoders just to be safe.
+    // Opt-out all non-hwaccel decoders just to be safe.
     bool value;
     if (Utils::getEnvironmentVariableOverride("SEPARATE_TEST_DECODER", &value)) {
         return value;
@@ -1173,12 +859,6 @@ bool FFmpegVideoDecoder::tryInitializeRenderer(const AVCodec* decoder,
     if (separateTestDecoder) {
         // Setup the test decoder parameters using the dimensions for the test frame. These are
         // used to populate the AVCodecContext fields of the same names.
-        //
-        // While most decoders don't care what dimensions we specify here, V4L2M2M seems to puke
-        // if we pass whatever the native stream resolution is then decode a 720p test frame.
-        //
-        // For qcom-venus, it seems to lead to failures allocating capture buffers (bug #1042).
-        // For wave5 (VisionFive), it leads to an invalid pitch error when calling drmModeAddFB2().
         testFrameDecoderParams.width = 1280;
         testFrameDecoderParams.height = 720;
     }
@@ -1189,78 +869,61 @@ bool FFmpegVideoDecoder::tryInitializeRenderer(const AVCodec* decoder,
         *failureReason = IFFmpegRenderer::InitFailureReason::Unknown;
     }
 
-    // i == 0 - Indirect via EGL, DRM, or Vulkan frontend with zero-copy buffer passing
-    // i == 1 - Direct rendering or indirect via SDL or DRM read-back
-    bool backendInitFailure = false;
-#if defined(Q_OS_UNIX) && !defined(Q_OS_DARWIN) && (defined(HAVE_EGL) || defined(HAVE_DRM) || defined(HAVE_LIBPLACEBO_VULKAN))
-    for (int i = 0; i < 2 && !backendInitFailure; i++) {
-#else
-    for (int i = 1; i < 2 && !backendInitFailure; i++) {
-#endif
-        SDL_assert(m_BackendRenderer == nullptr);
+    SDL_assert(m_BackendRenderer == nullptr);
 
-        if ((m_BackendRenderer = createRendererFunc()) == nullptr) {
-            // Out of memory
-            break;
-        }
+    if ((m_BackendRenderer = createRendererFunc()) == nullptr) {
+        return false;
+    }
 
-        // Initialize the backend renderer for testing
-        if (initializeRendererInternal(m_BackendRenderer, &testFrameDecoderParams)) {
-            if (completeInitialization(decoder, requiredFormat, &testFrameDecoderParams,
-                                       (m_TestOnly || separateTestDecoder) ? TestMode::TestFrameOnly : TestMode::TestFrame,
-                                        i == 0 /* EGL/DRM */)) {
-                if (m_TestOnly) {
-                    // This decoder is only for testing capabilities, so don't bother
-                    // creating a usable renderer
-                    return true;
-                }
-
-                if (separateTestDecoder) {
-                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                                "Not reusing test decoder for %s",
-                                decoder->name);
-
-                    // The test worked, so now let's initialize it for real
-                    reset();
-
-                    if ((m_BackendRenderer = createRendererFunc()) == nullptr) {
-                        // Out of memory
-                        break;
-                    }
-
-                    if (initializeRendererInternal(m_BackendRenderer, params) &&
-                        completeInitialization(decoder, requiredFormat, params, TestMode::NoTesting, i == 0 /* EGL/DRM */)) {
-                        return true;
-                    }
-                    else {
-                        SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION,
-                                        "Decoder failed to initialize after successful test");
-                    }
-                }
-                else {
-                    // The test decoder can be used for real decoding
-                    return true;
-                }
-            }
-        }
-        else {
-            // If we failed to initialize the backend entirely, there's no sense in trying
-            // a different frontend renderer as it won't make a difference.
-            backendInitFailure = true;
-        }
-
-        auto backendFailureReason = m_BackendRenderer->getInitFailureReason();
-
+    // Initialize the backend renderer for testing
+    if (!initializeRendererInternal(m_BackendRenderer, &testFrameDecoderParams)) {
         if (failureReason != nullptr) {
-            *failureReason = backendFailureReason;
+            *failureReason = m_BackendRenderer->getInitFailureReason();
         }
 
         reset();
+        return false;
     }
 
-    // reset() must be called before we reach this point!
-    SDL_assert(m_BackendRenderer == nullptr);
-    return false;
+    if (!completeInitialization(decoder, requiredFormat, &testFrameDecoderParams,
+                                (m_TestOnly || separateTestDecoder) ? TestMode::TestFrameOnly : TestMode::TestFrame)) {
+        reset();
+        return false;
+    }
+
+    if (m_TestOnly) {
+        // This decoder is only for testing capabilities, so don't bother
+        // creating a usable renderer
+        return true;
+    }
+
+    if (separateTestDecoder) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Not reusing test decoder for %s",
+                    decoder->name);
+
+        // The test worked, so now let's initialize it for real
+        reset();
+
+        if ((m_BackendRenderer = createRendererFunc()) == nullptr) {
+            return false;
+        }
+
+        if (initializeRendererInternal(m_BackendRenderer, params) &&
+            completeInitialization(decoder, requiredFormat, params, TestMode::NoTesting)) {
+            return true;
+        }
+        else {
+            SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION,
+                            "Decoder failed to initialize after successful test");
+        }
+
+        reset();
+        return false;
+    }
+
+    // The test decoder can be used for real decoding
+    return true;
 }
 
 #define TRY_PREFERRED_PIXEL_FORMAT(RENDERER_TYPE) \
@@ -1306,28 +969,6 @@ bool FFmpegVideoDecoder::tryInitializeRendererForUnknownDecoder(const AVCodec* d
         return false;
     }
 
-    bool glIsSlow;
-    bool vulkanIsSlow;
-
-    if (!Utils::getEnvironmentVariableOverride("GL_IS_SLOW", &glIsSlow)) {
-#ifdef GL_IS_SLOW
-        glIsSlow = true;
-#else
-        glIsSlow = WMUtils::isGpuSlow();
-#endif
-    }
-
-    if (!Utils::getEnvironmentVariableOverride("VULKAN_IS_SLOW", &vulkanIsSlow)) {
-#ifdef VULKAN_IS_SLOW
-        vulkanIsSlow = true;
-#else
-        vulkanIsSlow = WMUtils::isGpuSlow();
-#endif
-    }
-
-    Q_UNUSED(glIsSlow);
-    Q_UNUSED(vulkanIsSlow);
-
     const AVPixelFormat* decoder_pix_fmts;
 #if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(61, 13, 100)
     if (avcodec_get_supported_config(nullptr, decoder, AV_CODEC_CONFIG_PIX_FORMAT, 0,
@@ -1364,28 +1005,12 @@ bool FFmpegVideoDecoder::tryInitializeRendererForUnknownDecoder(const AVCodec* d
     }
 
     if (decoder_pix_fmts == NULL) {
-        // Supported output pixel formats are unknown. We'll just try DRM/SDL and hope it can cope.
-
-#ifdef HAVE_DRM
-        if ((glIsSlow || vulkanIsSlow) && tryInitializeRenderer(decoder, AV_PIX_FMT_NONE, params, nullptr, nullptr,
-                                  []() -> IFFmpegRenderer* { return new DrmRenderer(); })) {
-            return true;
-        }
-#endif
-
-#ifdef HAVE_LIBPLACEBO_VULKAN
-        if (!vulkanIsSlow && tryInitializeRenderer(decoder, AV_PIX_FMT_NONE, params, nullptr, nullptr,
-                                  []() -> IFFmpegRenderer* { return new PlVkRenderer(); })) {
-            return true;
-        }
-#endif
-
-#ifdef Q_OS_DARWIN
+        // Supported output pixel formats are unknown. Try the VideoToolbox
+        // renderer, then fall back to SDL.
         if (tryInitializeRenderer(decoder, AV_PIX_FMT_NONE, params, nullptr, nullptr,
                                   []() -> IFFmpegRenderer* { return VTMetalRendererFactory::createRenderer(false); })) {
             return true;
         }
-#endif
 
         if (tryInitializeRenderer(decoder, AV_PIX_FMT_NONE, params, nullptr, nullptr,
                                   []() -> IFFmpegRenderer* { return new SdlRenderer(); })) {
@@ -1395,75 +1020,14 @@ bool FFmpegVideoDecoder::tryInitializeRendererForUnknownDecoder(const AVCodec* d
         return false;
     }
 
-    // HACK: Avoid using YUV420P on h264_mmal. It can cause a deadlock inside the MMAL libraries.
-    // Even if it didn't completely deadlock us, the performance would likely be atrocious.
-    if (strcmp(decoder->name, "h264_mmal") == 0) {
-#ifdef HAVE_MMAL
-        for (int i = 0; decoder_pix_fmts[i] != AV_PIX_FMT_NONE; i++) {
-            TRY_PREFERRED_PIXEL_FORMAT(MmalRenderer);
-        }
-
-        for (int i = 0; decoder_pix_fmts[i] != AV_PIX_FMT_NONE; i++) {
-            TRY_SUPPORTED_NON_PREFERRED_PIXEL_FORMAT(MmalRenderer);
-        }
-#endif
-
-        // Give up if we can't use MmalRenderer for h264_mmal
-        return false;
-    }
-
     // Check if any of our decoders prefer any of the pixel formats first
     for (int i = 0; decoder_pix_fmts[i] != AV_PIX_FMT_NONE; i++) {
-#ifdef HAVE_DRM
-        TRY_PREFERRED_PIXEL_FORMAT(DrmRenderer);
-#endif
-#ifdef HAVE_LIBPLACEBO_VULKAN
-        if (!vulkanIsSlow) {
-            TRY_PREFERRED_PIXEL_FORMAT(PlVkRenderer);
-        }
-#endif
-        if (!glIsSlow) {
-            TRY_PREFERRED_PIXEL_FORMAT(SdlRenderer);
-        }
+        TRY_PREFERRED_PIXEL_FORMAT(SdlRenderer);
     }
 
-    // Nothing prefers any of them. Let's see if anyone will tolerate one.
+    // Nothing prefers it. Let's see if it will tolerate one.
     for (int i = 0; decoder_pix_fmts[i] != AV_PIX_FMT_NONE; i++) {
-#ifdef HAVE_DRM
-        TRY_SUPPORTED_NON_PREFERRED_PIXEL_FORMAT(DrmRenderer);
-#endif
-#ifdef HAVE_LIBPLACEBO_VULKAN
-        if (!vulkanIsSlow) {
-            TRY_SUPPORTED_NON_PREFERRED_PIXEL_FORMAT(PlVkRenderer);
-        }
-#endif
-        if (!glIsSlow) {
-            TRY_SUPPORTED_NON_PREFERRED_PIXEL_FORMAT(SdlRenderer);
-        }
-    }
-
-#ifdef HAVE_LIBPLACEBO_VULKAN
-    if (vulkanIsSlow) {
-        // If we got here with VULKAN_IS_SLOW, DrmRenderer didn't work,
-        // so we have to resort to PlVkRenderer.
-        for (int i = 0; decoder_pix_fmts[i] != AV_PIX_FMT_NONE; i++) {
-            TRY_PREFERRED_PIXEL_FORMAT(PlVkRenderer);
-        }
-        for (int i = 0; decoder_pix_fmts[i] != AV_PIX_FMT_NONE; i++) {
-            TRY_SUPPORTED_NON_PREFERRED_PIXEL_FORMAT(PlVkRenderer);
-        }
-    }
-#endif
-
-    if (glIsSlow) {
-        // If we got here with GL_IS_SLOW, DrmRenderer didn't work, so we have
-        // to resort to SdlRenderer.
-        for (int i = 0; decoder_pix_fmts[i] != AV_PIX_FMT_NONE; i++) {
-            TRY_PREFERRED_PIXEL_FORMAT(SdlRenderer);
-        }
-        for (int i = 0; decoder_pix_fmts[i] != AV_PIX_FMT_NONE; i++) {
-            TRY_SUPPORTED_NON_PREFERRED_PIXEL_FORMAT(SdlRenderer);
-        }
+        TRY_SUPPORTED_NON_PREFERRED_PIXEL_FORMAT(SdlRenderer);
     }
 
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
@@ -1478,32 +1042,12 @@ int FFmpegVideoDecoder::getAVCodecCapabilities(const AVCodec *codec)
 {
     int caps = codec->capabilities;
 
-    // There are a bunch of out-of-tree OMX decoder implementations
-    // from various SBC manufacturers that all seem to forget to set
-    // AV_CODEC_CAP_HARDWARE (probably because the upstream OMX code
-    // also doesn't set it). Avoid a false decoder warning on startup
-    // by setting it ourselves.
-    if (QString::fromUtf8(codec->name).endsWith("_omx", Qt::CaseInsensitive)) {
-        caps |= AV_CODEC_CAP_HARDWARE;
-    }
-
     return caps;
 }
 
 bool FFmpegVideoDecoder::isDecoderMatchForParams(const AVCodec *decoder, PDECODER_PARAMETERS params)
 {
     SDL_assert(params->videoFormat & (VIDEO_FORMAT_MASK_H264 | VIDEO_FORMAT_MASK_H265 | VIDEO_FORMAT_MASK_AV1));
-
-#if defined(HAVE_MMAL) && !defined(ALLOW_EGL_WITH_MMAL)
-    // Only enable V4L2M2M by default on non-MMAL (RPi) builds. The performance
-    // of the V4L2M2M wrapper around MMAL is not enough for 1080p 60 FPS, so we
-    // would rather show the missing hardware acceleration warning when the user
-    // is in Full KMS mode rather than try to use a poorly performing hwaccel.
-    // See discussion on https://github.com/jc-kynesim/rpi-ffmpeg/pull/25
-    if (strcmp(decoder->name, "h264_v4l2m2m") == 0) {
-        return false;
-    }
-#endif
 
     return ((params->videoFormat & VIDEO_FORMAT_MASK_H264) && decoder->id == AV_CODEC_ID_H264) ||
            ((params->videoFormat & VIDEO_FORMAT_MASK_H265) && decoder->id == AV_CODEC_ID_HEVC) ||
@@ -1641,8 +1185,6 @@ bool FFmpegVideoDecoder::initialize(PDECODER_PARAMETERS params)
     // First try decoders that the user has manually specified via environment variables.
     // These must output surfaces in one of the formats that one of our renderers supports,
     // which is currently:
-    // - AV_PIX_FMT_DRM_PRIME
-    // - AV_PIX_FMT_MMAL
     // - AV_PIX_FMT_YUV420P
     // - AV_PIX_FMT_YUVJ420P
     // - AV_PIX_FMT_NV12

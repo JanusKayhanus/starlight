@@ -182,7 +182,6 @@ private:
 
     void emulateAbsoluteFingerEvent(SDL_TouchFingerEvent* event);
 
-    void disableTouchFeedback();
 
     void handleRelativeFingerEvent(SDL_TouchFingerEvent* event);
 
@@ -241,7 +240,6 @@ private:
     int m_StreamHeight;
     bool m_AbsoluteMouseMode;
     bool m_AbsoluteTouchMode;
-    bool m_DisabledTouchFeedback;
 
     SDL_TouchFingerEvent m_TouchDownEvent[MAX_FINGERS];
     SDL_TimerID m_LeftButtonReleaseTimer;

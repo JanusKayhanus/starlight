@@ -2,22 +2,15 @@
 #include <QStyleHints>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
-#include <QIcon>
 #include <QQuickStyle>
 #include <QMutex>
 #include <QtDebug>
 #include <QNetworkProxyFactory>
-#include <QPalette>
-#include <QFont>
-#include <QCursor>
 #include <QElapsedTimer>
-#include <QTemporaryFile>
 #include <QRegularExpression>
 
-#ifdef Q_OS_UNIX
 #include <sys/socket.h>
 #include <signal.h>
-#endif
 
 // Don't let SDL hook our main function, since Qt is already
 // doing the same thing. This needs to be before any headers
@@ -29,23 +22,12 @@
 #include "streaming/video/ffmpeg.h"
 #endif
 
-#if defined(Q_OS_WIN32)
-#include "antihookingprotection.h"
-
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
-#include <dxgi1_6.h>
-#elif defined(Q_OS_LINUX)
-#include <openssl/ssl.h>
-#endif
-
 #include "cli/listapps.h"
 #include "cli/quitstream.h"
 #include "cli/startstream.h"
 #include "cli/pair.h"
 #include "cli/commandlineparser.h"
 #include "path.h"
-#include "utils.h"
 #include "gui/computermodel.h"
 #include "gui/appmodel.h"
 #include "backend/autoupdatechecker.h"
@@ -55,20 +37,11 @@
 #include "settings/streamingpreferences.h"
 #include "gui/sdlgamepadkeynavigation.h"
 
-#ifdef Q_OS_DARWIN
 #include "gui/macoswindow.h"
-#endif
 
-#if defined(Q_OS_WIN32)
-#define IS_UNSPECIFIED_HANDLE(x) ((x) == INVALID_HANDLE_VALUE || (x) == NULL)
-
-// Log to file or console dynamically for Windows builds
+// Log to file for release builds and to the console for debug builds
+#if !defined(QT_DEBUG)
 #define LOG_TO_FILE
-#elif !defined(QT_DEBUG) && defined(Q_OS_DARWIN)
-// Log to file for release Mac builds
-#define LOG_TO_FILE
-#else
-// Log to console for debug Mac builds
 #endif
 
 // StreamUtils::setAsyncLogging() exposes control of this to the Session
@@ -89,10 +62,6 @@ static QRegularExpression k_RikeyIdRegex("&rikeyid=[\\d-]+");
 static const uint64_t k_MaxLogSizeBytes = 10 * 1024 * 1024;
 static QAtomicInteger<uint64_t> s_LogBytesWritten = 0;
 static QFile* s_LoggerFile;
-#endif
-
-#ifdef HAVE_DRM_MASTER_HOOKS
-extern "C" bool g_DisableDrmHooks;
 #endif
 
 class LoggerTask : public QRunnable
@@ -120,18 +89,6 @@ private:
 
 void logToLoggerStream(QString& message)
 {
-#if defined(QT_DEBUG) && defined(Q_OS_WIN32)
-    // Output log messages to a debugger if attached
-    if (IsDebuggerPresent()) {
-        thread_local QString lineBuffer;
-        lineBuffer += message;
-        if (message.endsWith('\n')) {
-            OutputDebugStringW(lineBuffer.toStdWString().c_str());
-            lineBuffer.clear();
-        }
-    }
-#endif
-
     // Strip session encryption keys and IVs from the logs
     message.replace(k_RikeyRegex, "&rikey=REDACTED");
     message.replace(k_RikeyIdRegex, "&rikeyid=REDACTED");
@@ -274,69 +231,6 @@ void ffmpegLogToDiskHandler(void* ptr, int level, const char* fmt, va_list vl)
 
 #endif
 
-#ifdef Q_OS_WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
-#include <DbgHelp.h>
-
-static UINT s_HitUnhandledException = 0;
-
-LONG WINAPI UnhandledExceptionHandler(struct _EXCEPTION_POINTERS *ExceptionInfo)
-{
-    // Only write a dump for the first unhandled exception
-    if (InterlockedCompareExchange(&s_HitUnhandledException, 1, 0) != 0) {
-        return EXCEPTION_CONTINUE_SEARCH;
-    }
-
-    WCHAR dmpFileName[MAX_PATH];
-    swprintf_s(dmpFileName, L"%ls\\Moonlight-%I64u.dmp",
-               (PWCHAR)QDir::toNativeSeparators(Path::getLogDir()).utf16(), QDateTime::currentSecsSinceEpoch());
-    QString qDmpFileName = QString::fromUtf16((const char16_t*)dmpFileName);
-    HANDLE dumpHandle = CreateFileW(dmpFileName, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (dumpHandle != INVALID_HANDLE_VALUE) {
-        MINIDUMP_EXCEPTION_INFORMATION info;
-
-        info.ThreadId = GetCurrentThreadId();
-        info.ExceptionPointers = ExceptionInfo;
-        info.ClientPointers = FALSE;
-
-        DWORD typeFlags = MiniDumpWithIndirectlyReferencedMemory |
-                MiniDumpIgnoreInaccessibleMemory |
-                MiniDumpWithUnloadedModules |
-                MiniDumpWithThreadInfo;
-
-        if (MiniDumpWriteDump(GetCurrentProcess(),
-                               GetCurrentProcessId(),
-                               dumpHandle,
-                               (MINIDUMP_TYPE)typeFlags,
-                               &info,
-                               nullptr,
-                               nullptr)) {
-            qCritical() << "Unhandled exception! Minidump written to:" << qDmpFileName;
-        }
-        else {
-            qCritical() << "Unhandled exception! Failed to write dump:" << GetLastError();
-        }
-
-        CloseHandle(dumpHandle);
-    }
-    else {
-        qCritical() << "Unhandled exception! Failed to open dump file:" << qDmpFileName << "with error" << GetLastError();
-    }
-
-    // Sleep for a moment to allow the logging thread to finish up before crashing
-    if (g_AsyncLoggingEnabled) {
-        Sleep(500);
-    }
-
-    // Let the program crash and WER collect a dump
-    return EXCEPTION_CONTINUE_SEARCH;
-}
-
-#endif
-
-#ifdef Q_OS_UNIX
-
 static int signalFds[2];
 
 void handleSignal(int sig)
@@ -420,8 +314,6 @@ void configureSignalHandlers()
     sigaction(SIGTERM, &sa, nullptr);
 }
 
-#endif
-
 int main(int argc, char *argv[])
 {
     SDL_SetMainReady();
@@ -454,25 +346,13 @@ int main(int argc, char *argv[])
         qputenv("QML_DISK_CACHE_PATH", Path::getQmlCacheDir().toUtf8());
     }
 
-#ifdef Q_OS_WIN32
-    // Grab the original std handles before we potentially redirect them later
-    HANDLE oldConOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    HANDLE oldConErr = GetStdHandle(STD_ERROR_HANDLE);
-#endif
-
 #ifdef LOG_TO_FILE
     QDir tempDir(Path::getLogDir());
 
-#ifdef Q_OS_WIN32
-    // Only log to a file if the user didn't redirect stderr somewhere else
-    if (IS_UNSPECIFIED_HANDLE(oldConErr))
-#endif
-    {
-        s_LoggerFile = new QFile(tempDir.filePath(QString("Moonlight-%1.log").arg(QDateTime::currentSecsSinceEpoch())));
-        if (s_LoggerFile->open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QTextStream(stderr) << "Redirecting log output to " << s_LoggerFile->fileName() << Qt::endl;
-            s_LoggerStream.setDevice(s_LoggerFile);
-        }
+    s_LoggerFile = new QFile(tempDir.filePath(QString("Moonlight-%1.log").arg(QDateTime::currentSecsSinceEpoch())));
+    if (s_LoggerFile->open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream(stderr) << "Redirecting log output to " << s_LoggerFile->fileName() << Qt::endl;
+        s_LoggerStream.setDevice(s_LoggerFile);
     }
 #endif
 
@@ -494,11 +374,6 @@ int main(int argc, char *argv[])
     av_log_set_callback(ffmpegLogToDiskHandler);
 #endif
 
-#ifdef Q_OS_WIN32
-    // Create a crash dump when we crash on Windows
-    SetUnhandledExceptionFilter(UnhandledExceptionHandler);
-#endif
-
 #ifdef LOG_TO_FILE
     // Prune the oldest existing logs if there are more than 10
     QStringList existingLogNames = tempDir.entryList(QStringList("Moonlight-*.log"), QDir::NoFilter, QDir::SortFlag::Time);
@@ -508,144 +383,29 @@ int main(int argc, char *argv[])
     }
 #endif
 
-#if defined(Q_OS_WIN32)
-    // Force AntiHooking.dll to be statically imported and loaded
-    // by ntdll on Win32 platforms by calling a dummy function.
-    AntiHookingDummyImport();
-#elif defined(APP_IMAGE)
-    // Force libssl.so to be directly linked to our binary, so
-    // linuxdeployqt can find it and include it in our AppImage.
-    // QtNetwork will pull it in via dlopen().
-    SSL_free(nullptr);
-#endif
-
-    // We keep this at function scope to ensure it stays around while we're running,
-    // because the Qt QPA will need to read it. Since the temporary file is only
-    // created when open() is called, this doesn't do any harm for other platforms.
-    QTemporaryFile eglfsConfigFile;
-
-    // Avoid using High DPI on EGLFS. It breaks font rendering.
-    // https://bugreports.qt.io/browse/QTBUG-64377
-    //
-    // NB: We can't use QGuiApplication::platformName() here because it is only
-    // set once the QGuiApplication is created, which is too late to enable High DPI :(
-    if (WMUtils::isRunningWindowManager()) {
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-        // Enable High DPI support on Qt 5.x. It is always enabled on Qt 6.0
-        QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+    // Enable High DPI support on Qt 5.x. It is always enabled on Qt 6.0
+    QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 #endif
 
 #if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
-        // Enable fractional High DPI scaling on Qt 5.14 and later
-        QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
-#endif
-    }
-    else {
-#ifndef STEAM_LINK
-        if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORM")) {
-            qInfo() << "Unable to detect Wayland or X11, so EGLFS will be used by default. Set QT_QPA_PLATFORM to override this.";
-            qputenv("QT_QPA_PLATFORM", "eglfs");
-
-            if (!qEnvironmentVariableIsSet("QT_QPA_EGLFS_ALWAYS_SET_MODE")) {
-                qInfo() << "Setting display mode by default. Set QT_QPA_EGLFS_ALWAYS_SET_MODE=0 to override this.";
-
-                // The UI doesn't appear on RetroPie without this option.
-                qputenv("QT_QPA_EGLFS_ALWAYS_SET_MODE", "1");
-            }
-
-            if (!QFile("/dev/dri").exists()) {
-                qWarning() << "Unable to find a KMSDRM display device!";
-                qWarning() << "On the Raspberry Pi, you must enable the 'fake KMS' driver in raspi-config to use Moonlight outside of the GUI environment.";
-            }
-            else if (!qEnvironmentVariableIsSet("QT_QPA_EGLFS_KMS_CONFIG")) {
-                // HACK: Remove this when Qt is fixed to properly check for display support before picking a card
-                QString cardOverride = WMUtils::getDrmCardOverride();
-                if (!cardOverride.isEmpty()) {
-                    if (eglfsConfigFile.open()) {
-                        qInfo() << "Overriding default Qt EGLFS card selection to" << cardOverride;
-                        QTextStream(&eglfsConfigFile) << "{ \"device\": \"" << cardOverride << "\" }";
-                        qputenv("QT_QPA_EGLFS_KMS_CONFIG", eglfsConfigFile.fileName().toUtf8());
-                        eglfsConfigFile.close();
-                    }
-                }
-            }
-        }
-
-        // EGLFS uses OpenGLES 2.0, so we will too. Some embedded platforms may not
-        // even have working OpenGL implementations, so GLES is the only option.
-        // See https://github.com/moonlight-stream/moonlight-qt/issues/868
-        SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengles2");
-#endif
-    }
-
-    bool forceGles;
-    if (!Utils::getEnvironmentVariableOverride("FORCE_QT_GLES", &forceGles)) {
-        forceGles = WMUtils::isRunningNvidiaProprietaryDriverX11() ||
-                    !WMUtils::supportsDesktopGLWithEGL();
-    }
-    if (forceGles) {
-        // The Nvidia proprietary driver causes Qt to render a black window when using
-        // the default Desktop GL profile with EGL. AS a workaround, we default to
-        // OpenGL ES when running on Nvidia on X11.
-        // https://qt-project.atlassian.net/browse/QTBUG-106065
-        QSurfaceFormat fmt;
-        fmt.setRenderableType(QSurfaceFormat::OpenGLES);
-        QSurfaceFormat::setDefaultFormat(fmt);
-    }
-
-    // Some ARM and RISC-V embedded devices don't have working GLX which can cause
-    // SDL to fail to find a working OpenGL implementation at all. Let's force EGL
-    // on all platforms for both SDL and Qt. This also avoids GLX-EGL interop issues
-    // when trying to use EGL on the main thread after Qt uses GLX.
-    SDL_SetHint(SDL_HINT_VIDEO_X11_FORCE_EGL, "1");
-    qputenv("QT_XCB_GL_INTEGRATION", "xcb_egl");
-
-#ifdef Q_OS_WIN32
-    // Let us see the true VBlank rather than DWM's approximation. We do this here
-    // because this API must be called before the first swapchain (which Qt will
-    // create when the window is displayed). This is supported on Win11 22H2+.
-    auto fnDXGIDisableVBlankVirtualization =
-        (decltype(DXGIDisableVBlankVirtualization)*)GetProcAddress(GetModuleHandleW(L"dxgi.dll"),
-                                                                   "DXGIDisableVBlankVirtualization");
-    if (fnDXGIDisableVBlankVirtualization) {
-        fnDXGIDisableVBlankVirtualization();
-    }
+    // Enable fractional High DPI scaling on Qt 5.14 and later
+    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 #endif
 
-#ifdef Q_OS_MACOS
     // This avoids using the default keychain for SSL, which may cause
     // password prompts on macOS.
     qputenv("QT_SSL_USE_TEMPORARY_KEYCHAIN", "1");
-#endif
 
-#if defined(Q_OS_WIN32) && QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-    if (!qEnvironmentVariableIsSet("QT_OPENGL")) {
-        // On Windows, use ANGLE so we don't have to load OpenGL
-        // user-mode drivers into our app. OGL drivers (especially Intel)
-        // seem to crash Moonlight far more often than DirectX.
-        qputenv("QT_OPENGL", "angle");
-    }
-#endif
-
-#if !defined(Q_OS_WIN32) || QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     // Moonlight requires the non-threaded renderer because we depend
     // on being able to control the render thread by blocking in the
     // main thread (and pumping events from the main thread when needed).
     // That doesn't work with the threaded renderer which causes all
-    // sorts of odd behavior depending on the platform.
-    //
-    // NB: Windows defaults to the "windows" non-threaded render loop on
-    // Qt 5 and the threaded render loop on Qt 6.
+    // sorts of odd behavior.
     qputenv("QSG_RENDER_LOOP", "basic");
-#endif
 
-#if defined(Q_OS_DARWIN) && defined(QT_DEBUG) && !defined(HAVE_LIBPLACEBO_VULKAN)
-    // Enable Metal valiation for debug builds without libplacebo
-    //
-    // The current MoltenVK driver as of Vulkan SDK 1.4.350 triggers Metal debug layer
-    // violations on frame and overlay uploads like:
-    // _validateReplaceRegion:252: failed assertion `Replace Region Validation
-    // bytesPerRow(4803) must be a multiple of MTLPixelFormatBGRA8Unorm pixel bytes(4).
+#if defined(QT_DEBUG)
+    // Enable Metal validation for debug builds
     qputenv("MTL_DEBUG_LAYER", "1");
     qputenv("MTL_SHADER_VALIDATION", "1");
 #endif
@@ -665,35 +425,12 @@ int main(int argc, char *argv[])
     // initializing the SDL video subsystem to have any effect.
     SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1");
 
-    // We use MMAL to render on Raspberry Pi, so we do not require DRM master.
-    SDL_SetHint(SDL_HINT_KMSDRM_REQUIRE_DRM_MASTER, "0");
-
-    // Use Direct3D 9Ex to avoid a deadlock caused by the D3D device being reset when
-    // the user triggers a UAC prompt. This option controls the software/SDL renderer.
-    // The DXVA2 renderer uses Direct3D 9Ex itself directly.
-    SDL_SetHint(SDL_HINT_WINDOWS_USE_D3D9EX, "1");
-
     if (SDL_InitSubSystem(SDL_INIT_TIMER) != 0) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "SDL_InitSubSystem(SDL_INIT_TIMER) failed: %s",
                      SDL_GetError());
         return -1;
     }
-
-#if defined(STEAM_LINK) || defined(Q_OS_WIN32)
-    // Steam Link requires that we initialize video before creating our
-    // QGuiApplication in order to configure the framebuffer correctly.
-    //
-    // We keep the video subsystem initialized on Windows because it's
-    // much more costly to reinitialize than other platforms. It hurts
-    // the settings page transition performance significantly.
-    if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "SDL_InitSubSystem(SDL_INIT_VIDEO) failed: %s",
-                     SDL_GetError());
-        return -1;
-    }
-#endif
 
     // Use atexit() to ensure SDL_Quit() is called. This avoids
     // racing with object destruction where SDL may be used.
@@ -716,96 +453,29 @@ int main(int argc, char *argv[])
     // the mouse motion exactly how it was given to us.
     SDL_SetHint(SDL_HINT_MOUSE_RELATIVE_SCALING, "0");
 
-    // Set our app name for SDL to use with PulseAudio and PipeWire. This matches what we
-    // provide as our app name to libsoundio too. On SDL 2.0.18+, SDL_APP_NAME is also used
-    // for screensaver inhibitor reporting.
+    // Set our app name for SDL. On SDL 2.0.18+, SDL_APP_NAME is also used for
+    // screensaver inhibitor reporting.
     SDL_SetHint(SDL_HINT_AUDIO_DEVICE_APP_NAME, "Moonlight");
     SDL_SetHint(SDL_HINT_APP_NAME, "Moonlight");
-
-    // SDL will try to lock the mouse cursor on Wayland if it's not visible in order to
-    // support applications that assume they can warp the cursor (which isn't possible
-    // on Wayland). We don't want this behavior because it interferes with seamless mouse
-    // mode when toggling between windowed and fullscreen modes by unexpectedly locking
-    // the mouse cursor.
-    SDL_SetHint(SDL_HINT_VIDEO_WAYLAND_EMULATE_MOUSE_WARP, "0");
-
-#ifdef QT_DEBUG
-    // Allow thread naming using exceptions on debug builds. SDL doesn't use SEH
-    // when throwing the exceptions, so we don't enable it for release builds out
-    // of caution.
-    SDL_SetHint(SDL_HINT_WINDOWS_DISABLE_THREAD_NAMING, "0");
-#endif
 
     // Enable fast parameter checks on SDL 3.4.0+. We don't abuse the API by passing
     // incorrect objects, so we don't need additional expensive parameter checks.
     SDL_SetHint("SDL_INVALID_PARAM_CHECKS", "1");
 
-    // Disable hotplug detection for SDL_GetKeyboards() and SDL_GetMice(). We don't
-    // use this functionality and it can cause hangs when querying broken devices.
-    SDL_SetHint("SDL_WINDOWS_DETECT_DEVICE_HOTPLUG", "0");
-
-    // SDL3 supports offloading scaling to the Wayland compositor, which we take
-    // advantage of in the GL_IS_SLOW case to help fillrate-limited GPUs. To stay
-    // consistent with our own scaling logic, we need aspect ratio scaling which
-    // KDE doesn't currently handle properly. As a compromise, we'll just enable
-    // aspect ratio scaling in non-KDE environments.
-    //
-    // NB: We do not force SDL_VIDEO_WAYLAND_MODE_SCALING to "stretch" on KDE,
-    // because SDL 3.6 has a workaround for KDE and switches the default to
-    // "aspect" for all desktops.
-    if (!qgetenv("XDG_CURRENT_DESKTOP").contains("KDE")) {
-        SDL_SetHint("SDL_VIDEO_WAYLAND_MODE_SCALING", "aspect");
-    }
-
     QGuiApplication app(argc, argv);
 
-#ifdef Q_OS_DARWIN
     // macOS defaults "Keyboard navigation" to text fields and lists only, which
     // prevents Tab (and the gamepad navigation that synthesizes it) from moving
     // focus between non-text controls on the settings page. Force Tab to reach
     // all controls so keyboard and gamepad UI navigation work without requiring
-    // the user to enable a system accessibility setting. Other platforms already
-    // default to this behavior.
+    // the user to enable a system accessibility setting.
     app.styleHints()->setTabFocusBehavior(Qt::TabFocusAllControls);
-#endif
 
-#ifdef Q_OS_UNIX
     // Register signal handlers to arbitrate between SDL and Qt.
     // NB: This has to be done after the QGuiApplication is constructed to
     // ensure Qt has already installed its VT signals before we override
     // some of them with our own.
     configureSignalHandlers();
-#endif
-
-#ifdef Q_OS_WIN32
-    // If we don't have stdout or stderr handles (which will normally be the case
-    // since we're a /SUBSYSTEM:WINDOWS app), attach to our parent console and use
-    // that for stdout and stderr.
-    //
-    // If we do have stdout or stderr handles, that means the user has used standard
-    // handle redirection. In that case, we don't want to override those handles.
-    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
-        // If we didn't have an old stdout/stderr handle, use the new CONOUT$ handle
-        if (IS_UNSPECIFIED_HANDLE(oldConOut)) {
-            FILE* fp;
-            if (freopen_s(&fp, "CONOUT$", "w", stdout) == 0) {
-                setvbuf(fp, NULL, _IONBF, 0);
-            }
-            else {
-                freopen_s(&fp, "NUL", "w", stdout);
-            }
-        }
-        if (IS_UNSPECIFIED_HANDLE(oldConErr)) {
-            FILE* fp;
-            if (freopen_s(&fp, "CONOUT$", "w", stderr) == 0) {
-                setvbuf(fp, NULL, _IONBF, 0);
-            }
-            else {
-                freopen_s(&fp, "NUL", "w", stderr);
-            }
-        }
-    }
-#endif
 
     GlobalCommandLineParser parser;
     GlobalCommandLineParser::ParseResult commandLineParserResult = parser.parse(app.arguments());
@@ -831,33 +501,10 @@ int main(int argc, char *argv[])
                 runtimeVersion.major, runtimeVersion.minor, runtimeVersion.patch);
 
     // If we're running under sdl2-compat, it may tell us the underlying SDL3 version
-    const char* sdl3Version = SDL_GetHint("SDL3_VERSION");
-    int sdl3VersionInt = 0;
-    if (sdl3Version) {
+    if (const char* sdl3Version = SDL_GetHint("SDL3_VERSION")) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "SDL3 version: %s",
                     sdl3Version);
-
-        // Parse the version into integer form
-        QStringList list = QString(sdl3Version).split('.');
-        Q_ASSERT(list.size() == 3);
-        if (list.size() == 3) {
-            sdl3VersionInt = SDL_VERSIONNUM(list.at(0).toInt(), list.at(1).toInt(), list.at(2).toInt());
-        }
-    }
-
-    // SDL 3.4.0 and 3.4.2 have bugs in atomic KMSDRM support that break us,
-    // so disable atomic on the affected SDL3 versions. Since not all versions
-    // of sdl2-compat will set the SDL3_VERSION hint, we assume that versions
-    // prior to 2.32.66 are affected (since that was released at the same time
-    // as SDL 3.4.4 with the atomic fixes).
-    if ((sdl3VersionInt != 0 && sdl3VersionInt < SDL_VERSIONNUM(3, 4, 4)) ||
-            (runtimeVersion.patch >= 50 && runtimeVersion.patch < 66)) {
-#if !defined(Q_OS_WIN32) && !defined(Q_OS_DARWIN)
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                    "Setting SDL_KMSDRM_ATOMIC=0 for older sdl2-compat/SDL3 version");
-        SDL_SetHint("SDL_KMSDRM_ATOMIC", "0");
-#endif
     }
 
     // Apply the initial translation based on user preference
@@ -869,70 +516,6 @@ int main(int argc, char *argv[])
     QCoreApplication::translate("QPlatformTheme", "OK");
     QCoreApplication::translate("QPlatformTheme", "Help");
     QCoreApplication::translate("QPlatformTheme", "Cancel");
-
-    // After the QGuiApplication is created, the platform stuff will be initialized
-    // and we can set the SDL video driver to match Qt.
-    if (QGuiApplication::platformName() == "xcb") {
-        if (WMUtils::isRunningWayland()) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "Detected XWayland. This will probably break hardware decoding! Try running with QT_QPA_PLATFORM=wayland or switch to X11.");
-        }
-        qputenv("SDL_VIDEODRIVER", "x11");
-    }
-    else if (QGuiApplication::platformName().startsWith("wayland")) {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Detected Wayland");
-        qputenv("SDL_VIDEODRIVER", "wayland");
-    }
-#ifndef STEAM_LINK
-    // Force use of the KMSDRM backend for SDL when using Qt platform plugins
-    // that directly draw to the display without a windowing system.
-    else if (QGuiApplication::platformName() == "eglfs" || QGuiApplication::platformName() == "linuxfb") {
-        qputenv("SDL_VIDEODRIVER", "kmsdrm");
-    }
-#endif
-
-#ifdef HAVE_DRM_MASTER_HOOKS
-    // Only use the Qt-SDL DRM master interoperability hooks if Qt is using KMS
-    g_DisableDrmHooks = QGuiApplication::platformName() != "eglfs";
-#endif
-
-#ifdef STEAM_LINK
-    // Qt 5.9 from the Steam Link SDK is not able to load any fonts
-    // since the Steam Link doesn't include any of the ones it looks
-    // for. We know it has NotoSans so we will explicitly ask for that.
-    if (app.font().family().isEmpty()) {
-        qWarning() << "SL HACK: No default font - using NotoSans";
-
-        QFont fon("NotoSans");
-        app.setFont(fon);
-    }
-
-    // Move the mouse to the bottom right so it's invisible when using
-    // gamepad-only navigation.
-    QCursor().setPos(0xFFFF, 0xFFFF);
-#elif !SDL_VERSION_ATLEAST(2, 0, 11) && defined(Q_OS_LINUX) && (defined(__arm__) || defined(__aarch64__))
-    if (qgetenv("SDL_VIDEO_GL_DRIVER").isEmpty() && QGuiApplication::platformName() == "eglfs") {
-        // Look for Raspberry Pi GLES libraries. SDL 2.0.10 and earlier needs some help finding
-        // the correct libraries for the KMSDRM backend if not compiled with the RPI backend enabled.
-        if (SDL_LoadObject("libbrcmGLESv2.so") != nullptr) {
-            qputenv("SDL_VIDEO_GL_DRIVER", "libbrcmGLESv2.so");
-        }
-        else if (SDL_LoadObject("/opt/vc/lib/libbrcmGLESv2.so") != nullptr) {
-            qputenv("SDL_VIDEO_GL_DRIVER", "/opt/vc/lib/libbrcmGLESv2.so");
-        }
-    }
-#endif
-
-#ifndef Q_OS_DARWIN
-    // Set the window icon except on macOS where we want to keep the
-    // modified macOS 11 style rounded corner icon.
-    app.setWindowIcon(QIcon(":/res/moonlight.svg"));
-#endif
-
-    // This is necessary to show our icon correctly on Wayland
-    app.setDesktopFileName("com.moonlight_stream.Moonlight");
-    qputenv("SDL_VIDEO_WAYLAND_WMCLASS", "com.moonlight_stream.Moonlight");
-    qputenv("SDL_VIDEO_X11_WMCLASS", "com.moonlight_stream.Moonlight");
 
     // Register our C++ types for QML
     qmlRegisterType<ComputerModel>("ComputerModel", 1, 0, "ComputerModel");
@@ -967,37 +550,8 @@ int main(int argc, char *argv[])
     // Create the identity manager on the main thread
     IdentityManager::get();
 
-#ifdef Q_OS_DARWIN
     // Use the native macOS style, which follows the system appearance and accent color
-    bool nativeMacStyle = !qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_STYLE");
-#else
-    bool nativeMacStyle = false;
-#endif
-
-    if (nativeMacStyle) {
-        QQuickStyle::setStyle("macOS");
-    }
-    else {
-        // We require the Material theme
-        QQuickStyle::setStyle("Material");
-    }
-
-    // Our icons are styled for a dark theme, so we do not allow the user to override this
-    qputenv("QT_QUICK_CONTROLS_MATERIAL_THEME", "Dark");
-
-    // These are defaults that we allow the user to override
-    if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_MATERIAL_ACCENT")) {
-        qputenv("QT_QUICK_CONTROLS_MATERIAL_ACCENT", "Purple");
-    }
-    if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_MATERIAL_VARIANT")) {
-        qputenv("QT_QUICK_CONTROLS_MATERIAL_VARIANT", "Dense");
-    }
-    if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_MATERIAL_PRIMARY")) {
-        // Qt 6.9 began to use a different shade of Material.Indigo when we use a dark theme
-        // (which is all the time). The new color looks washed out, so manually specify the
-        // old primary color unless the user overrides it themselves.
-        qputenv("QT_QUICK_CONTROLS_MATERIAL_PRIMARY", "#3F51B5");
-    }
+    QQuickStyle::setStyle("macOS");
 
     QQmlApplicationEngine engine;
     QString initialView;
@@ -1006,7 +560,7 @@ int main(int argc, char *argv[])
     switch (commandLineParserResult) {
     case GlobalCommandLineParser::NormalStartRequested:
         // The macOS launcher combines the PC and app grids into one view
-        initialView = nativeMacStyle ? "qrc:/gui/LauncherView.qml" : "qrc:/gui/PcView.qml";
+        initialView = "qrc:/gui/LauncherView.qml";
         break;
     case GlobalCommandLineParser::StreamRequested:
         {
@@ -1052,26 +606,15 @@ int main(int argc, char *argv[])
     if (hasGUI) {
         engine.rootContext()->setContextProperty("initialView", initialView);
         engine.rootContext()->setContextProperty("runConfigChecks", commandLineParserResult == GlobalCommandLineParser::NormalStartRequested);
-        engine.rootContext()->setContextProperty("nativeMacStyle", nativeMacStyle);
-#ifdef Q_OS_DARWIN
-        if (nativeMacStyle) {
-            // Swap in the macOS variants of our controls from gui/+nativemac
-            engine.setExtraFileSelectors({ QStringLiteral("nativemac") });
-        }
-#endif
 
         // Load the main.qml file
         engine.load(QUrl(QStringLiteral("qrc:/gui/main.qml")));
         if (engine.rootObjects().isEmpty())
             return -1;
 
-#ifdef Q_OS_DARWIN
-        if (nativeMacStyle) {
-            if (auto window = qobject_cast<QWindow*>(engine.rootObjects().first())) {
-                MacOSWindow::useUnifiedTitleBar(window);
-            }
+        if (auto window = qobject_cast<QWindow*>(engine.rootObjects().first())) {
+            MacOSWindow::useUnifiedTitleBar(window);
         }
-#endif
     }
 
     int err = app.exec();
@@ -1096,13 +639,6 @@ int main(int argc, char *argv[])
 
     // Wait for pending log messages to be printed
     s_LoggerThread.waitForDone();
-
-#ifdef Q_OS_WIN32
-    // Without an explicit flush, console redirection for the list command
-    // doesn't work reliably (sometimes the target file contains no text).
-    fflush(stderr);
-    fflush(stdout);
-#endif
 
     return err;
 }

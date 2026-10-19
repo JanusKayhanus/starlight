@@ -2,7 +2,6 @@
 
 #include <Limelight.h>
 #include "SDL_compat.h"
-#include <SDL_syswm.h>
 #include "streaming/streamutils.h"
 
 #include <QtMath>
@@ -26,37 +25,6 @@ Uint32 SdlInputHandler::longPressTimerCallback(Uint32, void*)
     LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_RIGHT);
 
     return 0;
-}
-
-void SdlInputHandler::disableTouchFeedback()
-{
-    SDL_SysWMinfo info;
-
-    SDL_VERSION(&info.version);
-    SDL_GetWindowWMInfo(m_Window, &info);
-
-#ifdef Q_OS_WIN32
-    if (info.subsystem == SDL_SYSWM_WINDOWS) {
-        constexpr FEEDBACK_TYPE feedbackTypes[] = {
-            FEEDBACK_TOUCH_CONTACTVISUALIZATION,
-            FEEDBACK_PEN_BARRELVISUALIZATION,
-            FEEDBACK_PEN_TAP,
-            FEEDBACK_PEN_DOUBLETAP,
-            FEEDBACK_PEN_PRESSANDHOLD,
-            FEEDBACK_PEN_RIGHTTAP,
-            FEEDBACK_TOUCH_TAP,
-            FEEDBACK_TOUCH_DOUBLETAP,
-            FEEDBACK_TOUCH_PRESSANDHOLD,
-            FEEDBACK_TOUCH_RIGHTTAP,
-            FEEDBACK_GESTURE_PRESSANDTAP,
-        };
-
-        for (FEEDBACK_TYPE ft : feedbackTypes) {
-            BOOL val = FALSE;
-            SetWindowFeedbackSetting(info.info.win.window, ft, 0, sizeof(val), &val);
-        }
-    }
-#endif
 }
 
 void SdlInputHandler::handleAbsoluteFingerEvent(SDL_TouchFingerEvent* event)
@@ -119,7 +87,7 @@ void SdlInputHandler::handleAbsoluteFingerEvent(SDL_TouchFingerEvent* event)
             if (event->touchId == SDL_GetTouchDevice(i)) {
                 const char* touchName = SDL_GetTouchName(i);
 
-                // SDL will report "pen" as the name of pen input devices on Windows.
+                // SDL reports "pen" as the name of pen input devices.
                 // https://github.com/libsdl-org/SDL/pull/5926
                 isPen = touchName && SDL_strcmp(touchName, "pen") == 0;
                 break;
@@ -137,11 +105,6 @@ void SdlInputHandler::handleAbsoluteFingerEvent(SDL_TouchFingerEvent* event)
                              0.0f, 0.0f, LI_ROT_UNKNOWN);
         }
 
-        if (!m_DisabledTouchFeedback) {
-            // Disable touch feedback when passing touch natively
-            disableTouchFeedback();
-            m_DisabledTouchFeedback = true;
-        }
     }
     else {
         emulateAbsoluteFingerEvent(event);
@@ -150,7 +113,7 @@ void SdlInputHandler::handleAbsoluteFingerEvent(SDL_TouchFingerEvent* event)
 
 void SdlInputHandler::emulateAbsoluteFingerEvent(SDL_TouchFingerEvent* event)
 {
-    // Observations on Windows 10: x and y appear to be relative to 0,0 of the window client area.
+    // SDL reports x and y relative to the top-left of the window client area.
     // Although SDL documentation states they are 0.0 - 1.0 float values, they can actually be higher
     // or lower than those values as touch events continue for touches started within the client area that
     // leave the client area during a drag motion.

@@ -13,15 +13,13 @@ def get_platform_config():
     system = platform.system()
     if system == "Darwin":
         return "mac", "macos-universal.zip"
-    if system == "Linux":
-        return "steamlink", "steamlink.zip"
 
-    print(f"Error: Unsupported platform ({system})")
+    print(f"Error: Unsupported platform ({system}). This fork is macOS-only.")
     sys.exit(1)
 
 def download_and_extract():
     subfolder, asset_name = get_platform_config()
-    
+
     target_dir = os.path.join(os.getcwd(), "libs", subfolder)
     url = f"https://github.com/{ORGANIZATION}/{PREBUILT_REPO}/releases/download/{TAG}/{asset_name}"
 

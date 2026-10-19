@@ -44,12 +44,11 @@ public:
     };
     Q_ENUM(VideoDecoderSelection)
 
-    // Mac only (for now)
+    // macOS renderer selection
     enum RendererSelection
     {
         RS_PROBE_ONLY = -1, // Only valid for probing decoder properties
         RS_AUTO,
-        RS_VULKAN,
         RS_METAL,
         RS_AVSBDL
     };

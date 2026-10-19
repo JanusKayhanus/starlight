@@ -9,21 +9,14 @@ import SystemProperties 1.0
 Item {
     property Session session
     property string appName
-    property string stageText : isResume ? qsTr("Resuming %1...").arg(appName) :
-                                           qsTr("Starting %1...").arg(appName)
     property bool isResume : false
     property bool quitAfter : false
 
     // Image of the launcher when the stream was started, for the launch transition
     property var launcherGrab : null
 
-    // The macOS style plays a launch transition that hands off to the stream
-    readonly property bool useLaunchTransition : nativeMacStyle
-
     function stageStarting(stage)
     {
-        // Update the spinner text
-        stageText = qsTr("Starting %1...").arg(stage)
         launchView.stageStarted(stage)
     }
 
@@ -40,18 +33,6 @@ Item {
     function connectionStarted()
     {
         // The launch transition keeps the window up until readyToStream()
-        if (useLaunchTransition) {
-            return
-        }
-
-        // Hide the UI contents so the user doesn't
-        // see them briefly when we pop off the StackView
-        stageSpinner.visible = false
-        stageLabel.visible = false
-        hintText.visible = false
-
-        // Hide the window now that streaming has begun
-        window.visible = false
     }
 
     function readyToStream()
@@ -138,10 +119,8 @@ Item {
         session.quitStarting.connect(quitStarting)
         session.sessionFinished.connect(sessionFinished)
         session.readyForDeletion.connect(sessionReadyForDeletion)
-        if (useLaunchTransition) {
-            session.deferStreamStart = true
-            session.readyToStream.connect(readyToStream)
-        }
+        session.deferStreamStart = true
+        session.readyToStream.connect(readyToStream)
 
         // Ensure the SystemProperties async thread is finished,
         // since it may currently be using the SDL video subsystem
@@ -190,12 +169,7 @@ Item {
             // This spinner is shown only after session.initialize() has completed
             // to prevent active animations from running during decoder probing,
             // which causes re-entrant event loop livelocks with libdecor-gtk.
-            if (useLaunchTransition) {
-                launchView.playIntro()
-            }
-            else {
-                stageSpinner.visible = true
-            }
+            launchView.playIntro()
 
             // Don't wait unless we have toasts to display
             startSessionTimer.interval = 0
@@ -230,7 +204,6 @@ Item {
     StreamLaunchView {
         id: launchView
         anchors.fill: parent
-        visible: useLaunchTransition
         launcherGrab: parent.launcherGrab
         snapshotUrl: session ? session.snapshotUrl : ""
         snapshotTime: session ? session.snapshotTime : new Date()
@@ -244,31 +217,9 @@ Item {
         }
     }
 
-    Row {
-        anchors.centerIn: parent
-        spacing: 5
-        visible: !useLaunchTransition
-
-        BusyIndicator {
-            id: stageSpinner
-            running: visible
-            visible: false
-        }
-
-        Label {
-            id: stageLabel
-            height: stageSpinner.height
-            text: stageText
-            font.pointSize: 20
-            verticalAlignment: Text.AlignVCenter
-
-            wrapMode: Text.Wrap
-        }
-    }
-
     Label {
         id: hintText
-        visible: !useLaunchTransition
+        visible: false
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 50
         anchors.horizontalCenter: parent.horizontalCenter

@@ -191,20 +191,12 @@ Uint32 SdlInputHandler::mouseEmulationTimerCallback(Uint32 interval, void *param
 
 static void updateAnalogStickAxis(short& value, short newValue, bool& dirty)
 {
-#ifdef STEAM_LINK
-    // Use a deadzone on Steam Link to reduce CPU usage from idle joysticks
-    newValue = abs(newValue) < 1500 ? 0 : newValue;
-#endif
     dirty |= (newValue != value);
     value = newValue;
 }
 
 static void updateTriggerAxis(unsigned char& value, unsigned char newValue, bool& dirty)
 {
-#ifdef STEAM_LINK
-    // Use a deadzone on Steam Link to reduce CPU usage from idle joysticks
-    newValue = newValue < 10 ? 0 : newValue;
-#endif
     dirty |= (newValue != value);
     value = newValue;
 }
@@ -538,7 +530,7 @@ void SdlInputHandler::handleControllerDeviceEvent(SDL_ControllerDeviceEvent* eve
         }
 
         // We used to use SDL_GameControllerGetPlayerIndex() here but that
-        // can lead to strange issues due to bugs in Windows where an Xbox
+        // can lead to strange issues due to platform bugs where an Xbox
         // controller will join as player 2, even though no player 1 controller
         // is connected at all. This pretty much screws any attempt to use
         // the gamepad in single player games, so just assign them in order from 0.

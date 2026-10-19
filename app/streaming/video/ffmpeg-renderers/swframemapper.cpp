@@ -122,7 +122,7 @@ AVFrame* SwFrameMapper::getSwFrameFromHwFrame(AVFrame* hwFrame)
 
     if (m_MapFrame) {
         // We don't use AV_HWFRAME_MAP_DIRECT here because it can cause huge
-        // performance penalties on Intel hardware with VAAPI due to mappings
+        // performance penalties on some Intel hardware due to mappings
         // being uncached memory.
         err = av_hwframe_map(swFrame, hwFrame, AV_HWFRAME_MAP_READ);
         if (err < 0) {

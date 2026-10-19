@@ -952,7 +952,6 @@ T.Drawer {
                         SettingsRow {
                             title: qsTr("Display mode")
                             subtitle: qsTr("Fullscreen generally provides the best performance, but borderless windowed may work better with features like macOS Spaces, Alt+Tab, screenshot tools, on-screen overlays, etc.")
-                            visible: SystemProperties.hasDesktopEnvironment
 
                             SettingsComboBox {
                                 function createModel() {
@@ -989,11 +988,6 @@ T.Drawer {
 
                                 // This is used on initialization and upon retranslation
                                 function reinitialize() {
-                                    if (!SystemProperties.hasDesktopEnvironment) {
-                                        // Do nothing if the control won't even be visible
-                                        return
-                                    }
-
                                     model = createModel()
                                     currentIndex = 0
 
@@ -1151,7 +1145,6 @@ T.Drawer {
                             title: qsTr("Mute audio stream when Moonlight is not the active window")
                             subtitle: qsTr("Mutes Moonlight's audio when you Alt+Tab out of the stream or click on a different window.")
                             toggleTarget: muteOnFocusLossCheck
-                            visible: SystemProperties.hasDesktopEnvironment
 
                             SettingsSwitch {
                                 id: muteOnFocusLossCheck
@@ -1185,7 +1178,6 @@ T.Drawer {
                         SettingsRow {
                             title: qsTr("Capture system keyboard shortcuts")
                             subtitle: qsTr("This enables the capture of system-wide keyboard shortcuts like Alt+Tab that would normally be handled by the client OS while streaming.")
-                            visible: SystemProperties.hasDesktopEnvironment
 
                             SettingsComboBox {
                                 // ignore setting the index at first, and actually set it when the component is loaded
@@ -1316,7 +1308,6 @@ T.Drawer {
                             title: qsTr("Process gamepad input when Moonlight is in the background")
                             subtitle: qsTr("Allows Moonlight to capture gamepad inputs even if it's not the current window in focus")
                             toggleTarget: backgroundGamepadCheck
-                            visible: SystemProperties.hasDesktopEnvironment
 
                             SettingsSwitch {
                                 id: backgroundGamepadCheck
@@ -1368,7 +1359,6 @@ T.Drawer {
                             title: qsTr("Disable AirDrop while streaming")
                             subtitle: qsTr("Temporarily disables AirDrop and other AWDL features while streaming to prevent Wi-Fi latency spikes. Installs a small background helper the first time, which requires administrator approval once.")
                             toggleTarget: disableAwdlCheck
-                            visible: Qt.platform.os === "osx"
 
                             SettingsSwitch {
                                 id: disableAwdlCheck
@@ -1595,8 +1585,7 @@ T.Drawer {
                                             ToolTip.show(qsTr("You must restart Moonlight for this change to take effect"), 5000)
                                         }
                                         else {
-                                            // Pop any AppView pages that exist underneath us.
-                                            // The AppView stops working after retranslate() for some reason.
+                                            // Pop any views that exist underneath us.
                                             if (stackView.depth > 1) {
                                                 stackView.pop(null)
                                             }
@@ -1611,16 +1600,10 @@ T.Drawer {
 
                         SettingsRow {
                             title: qsTr("GUI display mode")
-                            visible: SystemProperties.hasDesktopEnvironment
 
                             SettingsComboBox {
                                 // ignore setting the index at first, and actually set it when the component is loaded
                                 Component.onCompleted: {
-                                    if (!SystemProperties.hasDesktopEnvironment) {
-                                        // Do nothing if the control won't even be visible
-                                        return
-                                    }
-
                                     var saved_uidisplaymode = StreamingPreferences.uiDisplayMode
                                     currentIndex = 0
                                     for (var i = 0; i < uiDisplayModeListModel.count; i++) {
@@ -1804,7 +1787,6 @@ T.Drawer {
 
                         SettingsRow {
                             title: qsTr("Renderer")
-                            visible: SystemProperties.isDarwin
 
                             SettingsComboBox {
                                 // ignore setting the index at first, and actually set it when the component is loaded
@@ -1834,10 +1816,6 @@ T.Drawer {
                                         val: StreamingPreferences.RS_AUTO
                                     }
                                     ListElement {
-                                        text: "Vulkan"
-                                        val: StreamingPreferences.RS_VULKAN
-                                    }
-                                    ListElement {
                                         text: "Metal"
                                         val: StreamingPreferences.RS_METAL
                                     }
@@ -1856,7 +1834,6 @@ T.Drawer {
                         SettingsRow {
                             title: qsTr("Frame latency")
                             subtitle: qsTr("Trade presentation latency for smoother frame delivery.")
-                            visible: SystemProperties.isDarwin
 
                             SettingsComboBox {
                                 // ignore setting the index at first, and actually set it when the component is loaded
@@ -1960,7 +1937,6 @@ T.Drawer {
                         Row {
                             anchors.horizontalCenter: parent.horizontalCenter
                             spacing: 16
-                            visible: SystemProperties.hasBrowser
 
                             Repeater {
                                 model: [

@@ -9,24 +9,8 @@ CONFIG(release, debug|release) {
     DEFINES += NDEBUG
 }
 
-# Enable CFG, EHCont, and CET
-*-msvc {
-    QMAKE_CFLAGS += -guard:cf -guard:ehcont
-    QMAKE_CXXFLAGS += -guard:cf -guard:ehcont
-    QMAKE_LFLAGS += -guard:cf -guard:ehcont
-
-    contains(QT_ARCH, x86_64) {
-        QMAKE_LFLAGS += -cetcompat
-    }
-}
-
-# Enable ASan for Linux or macOS
+# Enable ASan for macOS
 #CONFIG += sanitizer sanitize_address
-
-# Enable ASan for Windows
-#QMAKE_CFLAGS += -fsanitize=address
-#QMAKE_CXXFLAGS += -fsanitize=address
-#QMAKE_LFLAGS += -incremental:no
 
 # Propagate environment variable flags
 QMAKE_CFLAGS   += $$(CFLAGS)

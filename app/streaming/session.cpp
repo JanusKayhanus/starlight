@@ -3,9 +3,7 @@
 #include "streaming/streamutils.h"
 #include "backend/richpresencemanager.h"
 
-#ifdef Q_OS_DARWIN
 #include "streaming/awdlsuppressor.h"
-#endif
 
 #include <Limelight.h>
 #include "SDL_compat.h"
@@ -15,16 +13,6 @@
 #include "video/ffmpeg.h"
 #endif
 
-#ifdef HAVE_SLVIDEO
-#include "video/slvid.h"
-#endif
-
-#ifdef Q_OS_WIN32
-// Scaling the icon down on Win32 looks dreadful, so render at lower res
-#define ICON_SIZE 32
-#else
-#define ICON_SIZE 64
-#endif
 
 #define SDL_CODE_FLUSH_WINDOW_EVENT_BARRIER 100
 #define SDL_CODE_GAMECONTROLLER_RUMBLE 101
@@ -38,21 +26,15 @@
 #include <QtEndian>
 #include <QCoreApplication>
 #include <QThreadPool>
-#include <QSvgRenderer>
-#include <QPainter>
 #include <QImage>
-#include <QGuiApplication>
-#include <QCursor>
 #include <QScreen>
 #include <QDir>
 #include <QTimer>
 #include <QUrl>
 #include "path.h"
 
-#ifdef Q_OS_DARWIN
 #include "gui/macoswindow.h"
 #include <SDL_syswm.h>
-#endif
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QQuickOpenGLUtils>
@@ -317,21 +299,6 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
                 "V-sync %s",
                 enableVsync ? "enabled" : "disabled");
 
-#ifdef HAVE_SLVIDEO
-    chosenDecoder = new SLVideoDecoder(testOnly);
-    if (chosenDecoder->initialize(&params)) {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                    "SLVideo video decoder chosen");
-        return true;
-    }
-    else {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "Unable to load SLVideo decoder");
-        delete chosenDecoder;
-        chosenDecoder = nullptr;
-    }
-#endif
-
 #ifdef HAVE_FFMPEG
     chosenDecoder = new FFmpegVideoDecoder(testOnly);
     if (chosenDecoder->initialize(&params)) {
@@ -347,10 +314,6 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
     }
 #endif
 
-#if !defined(HAVE_FFMPEG) && !defined(HAVE_SLVIDEO)
-#error No video decoding libraries available!
-#endif
-
     // If we reach this, we didn't initialize any decoders successfully
     return false;
 }
@@ -363,8 +326,7 @@ int Session::drSetup(int videoFormat, int width, int height, int frameRate, void
     s_ActiveSession->m_ActiveVideoFrameRate = frameRate;
 
     // Defer decoder setup until we've started streaming so we
-    // don't have to hide and show the SDL window (which seems to
-    // cause pointer hiding to break on Windows).
+    // don't have to hide and show the SDL window.
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Video stream is %dx%dx%d (format 0x%x)",
                 width, height, frameRate, videoFormat);
@@ -377,7 +339,7 @@ int Session::drSubmitDecodeUnit(PDECODE_UNIT du)
     // Use a lock since we'll be yanking this decoder out
     // from underneath the session when we initiate destruction.
     // We need to destroy the decoder on the main thread to satisfy
-    // some API constraints (like DXVA2). If we can't acquire it,
+    // some API constraints (like VideoToolbox). If we can't acquire it,
     // that means the decoder is about to be destroyed, so we can
     // safely return DR_OK and wait for the IDR frame request by
     // the decoder reinitialization code.
@@ -529,9 +491,8 @@ bool Session::populateDecoderProperties(SDL_Window* window)
     IVideoDecoder* decoder;
 
     // NB: We pass the real renderer selection rather than RS_PROBE_ONLY
-    // here because this is operating on the real streaming window, and
-    // instantiating Metal or AVSBDL renderers can interfere with MoltenVK's
-    // attempt to change the window's colorspace, causing washed out colors.
+    // here because this is operating on the real streaming window, so we
+    // want to probe the renderer that will actually be used.
     if (!chooseDecoder(m_Preferences->videoDecoderSelection,
                        m_Preferences->rendererSelection,
                        window,
@@ -582,7 +543,7 @@ bool Session::populateDecoderProperties(SDL_Window* window)
 
 Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *preferences)
     : m_Preferences(preferences ? preferences : StreamingPreferences::get()),
-      m_IsFullScreen(m_Preferences->windowMode != StreamingPreferences::WM_WINDOWED || !WMUtils::isRunningDesktopEnvironment()),
+      m_IsFullScreen(m_Preferences->windowMode != StreamingPreferences::WM_WINDOWED),
       m_Computer(computer),
       m_App(app),
       m_Window(nullptr),
@@ -621,7 +582,6 @@ bool Session::initialize(QQuickWindow* qtWindow)
 {
     m_QtWindow = qtWindow;
 
-#ifdef Q_OS_DARWIN
     if (qEnvironmentVariableIntValue("I_WANT_BUGGY_FULLSCREEN") == 0) {
         // If we have a notch and the user specified one of the two native display modes
         // (notched or notchless), override the fullscreen mode to ensure it works as expected.
@@ -661,7 +621,6 @@ bool Session::initialize(QQuickWindow* qtWindow)
         // https://github.com/moonlight-stream/moonlight-qt/issues/1218
         SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, shouldUseFullScreenSpaces ? "1" : "0");
     }
-#endif
 
     if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -702,18 +661,14 @@ bool Session::initialize(QQuickWindow* qtWindow)
     m_StreamConfig.fps = m_Preferences->fps;
     m_StreamConfig.bitrate = m_Preferences->bitrateKbps;
 
-#ifndef STEAM_LINK
-    // Opt-in to all encryption features if we detect that the platform
-    // has AES cryptography acceleration instructions and more than 2 cores.
+    // Opt-in to all encryption features if the platform has AES
+    // cryptography acceleration instructions and more than 2 cores.
     if (StreamUtils::hasFastAes() && SDL_GetCPUCount() > 2) {
         m_StreamConfig.encryptionFlags = ENCFLG_ALL;
     }
     else {
-        // Enable audio encryption as long as we're not on Steam Link.
-        // That hardware can hardly handle Opus decoding at all.
         m_StreamConfig.encryptionFlags = ENCFLG_AUDIO;
     }
-#endif
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                 "Video bitrate: %d kbps",
@@ -817,31 +772,11 @@ bool Session::initialize(QQuickWindow* qtWindow)
             }
         }
 
-        // Deprioritize AV1 unless we can't hardware decode HEVC, and have HDR enabled
-        // or we're on Windows or a non-x86 Linux/BSD.
-        //
-        // Normally, we'd assume hardware that can't decode HEVC definitely can't decode
-        // AV1 either, and we wouldn't even bother probing for AV1 support. However, some
-        // Windows business systems have HEVC support disabled in firmware from the factory,
-        // yet they can still decode AV1 in hardware. To avoid falling back to H.264 on
-        // these systems, we don't deprioritize AV1. This firmware-based HEVC licensing
-        // behavior seems to be unique to Windows, and Linux on the same system is able
-        // to decode HEVC in hardware normally using VAAPI.
-        // https://www.reddit.com/r/GeForceNOW/comments/1omsckt/psa_be_wary_of_purchasing_dell_computers_with/
-        //
-        // Some embedded Linux platforms have incomplete V4L2 decoding support which can
-        // lead to unusual cases where a system might support H.264 and AV1 but not HEVC,
-        // even if the underlying hardware supports all three. RK3588 is an example of
-        // such a SoC. To handle this situation, we will also probe for AV1 if we're on
-        // a non-x86 non-macOS UNIX system.
-        //
-        // We want to keep AV1 at the top of the list for HDR with software decoding
-        // because dav1d is higher performance than FFmpeg's HEVC software decoder.
-        if (hevcDA == DecoderAvailability::Hardware
-#if !defined(Q_OS_WIN32) && (!(defined(Q_OS_UNIX) && !defined(Q_OS_DARWIN)) || defined(Q_PROCESSOR_X86))
-            || !m_Preferences->enableHdr
-#endif
-            ) {
+        // Deprioritize AV1 unless we can't hardware decode HEVC and have HDR
+        // enabled. We want to keep AV1 at the top of the list for HDR with
+        // software decoding because dav1d is higher performance than FFmpeg's
+        // HEVC software decoder.
+        if (hevcDA == DecoderAvailability::Hardware || !m_Preferences->enableHdr) {
             m_SupportedVideoFormats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
         }
         else if (!m_Preferences->enableHdr &&
@@ -854,22 +789,20 @@ bool Session::initialize(QQuickWindow* qtWindow)
             m_SupportedVideoFormats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
         }
 
-#ifdef Q_OS_DARWIN
         {
             // Prior to GFE 3.11, GFE did not allow us to constrain
             // the number of reference frames, so we have to fixup the SPS
-            // to allow decoding via VideoToolbox on macOS. Since we don't
-            // have fixup code for HEVC, just avoid it if GFE is too old.
+            // to allow decoding via VideoToolbox. Since we don't have fixup
+            // code for HEVC, just avoid it if GFE is too old.
             QVector<int> gfeVersion = NvHTTP::parseQuad(m_Computer->gfeVersion);
             if (gfeVersion.isEmpty() || // Very old versions don't have GfeVersion at all
                     gfeVersion[0] < 3 ||
                     (gfeVersion[0] == 3 && gfeVersion[1] < 11)) {
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                            "Disabling HEVC on macOS due to old GFE version");
+                            "Disabling HEVC due to old GFE version");
                 m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_H265);
             }
         }
-#endif
         break;
     }
     case StreamingPreferences::VCC_FORCE_H264:
@@ -917,23 +850,10 @@ bool Session::initialize(QQuickWindow* qtWindow)
     switch (m_Preferences->windowMode)
     {
     default:
-        // Normally we'd default to fullscreen desktop when starting in windowed
-        // mode, but in the case of a slow GPU, we want to use real fullscreen
-        // to allow the display to assist with the video scaling work.
-        if (WMUtils::isGpuSlow()) {
-            m_FullScreenFlag = SDL_WINDOW_FULLSCREEN;
-            break;
-        }
-        // Fall-through
     case StreamingPreferences::WM_FULLSCREEN_DESKTOP:
-        // Only use full-screen desktop mode if we're running a desktop environment
-        if (WMUtils::isRunningDesktopEnvironment()) {
-            m_FullScreenFlag = SDL_WINDOW_FULLSCREEN_DESKTOP;
-            break;
-        }
-        // Fall-through
+        m_FullScreenFlag = SDL_WINDOW_FULLSCREEN_DESKTOP;
+        break;
     case StreamingPreferences::WM_FULLSCREEN:
-#ifdef Q_OS_DARWIN
         if (qEnvironmentVariableIntValue("I_WANT_BUGGY_FULLSCREEN") == 0) {
             // Don't use "real" fullscreen on macOS by default. See comments above.
             m_FullScreenFlag = SDL_WINDOW_FULLSCREEN_DESKTOP;
@@ -941,22 +861,8 @@ bool Session::initialize(QQuickWindow* qtWindow)
         else {
             m_FullScreenFlag = SDL_WINDOW_FULLSCREEN;
         }
-#else
-        m_FullScreenFlag = SDL_WINDOW_FULLSCREEN;
-#endif
         break;
     }
-
-#if !SDL_VERSION_ATLEAST(2, 0, 11)
-    // HACK: Using a full-screen window breaks mouse capture on the Pi's LXDE
-    // GUI environment. Force the session to use windowed mode (which won't
-    // really matter anyway because the MMAL renderer always draws full-screen).
-    if (qgetenv("DESKTOP_SESSION") == "LXDE-pi") {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                    "Forcing windowed mode on LXDE-Pi");
-        m_FullScreenFlag = 0;
-    }
-#endif
 
     // Check for validation errors/warnings and emit
     // signals for them, if appropriate
@@ -1324,10 +1230,8 @@ private:
             m_Session->m_LastFrameSnapshot = QImage();
         }
 
-#ifdef Q_OS_DARWIN
         // Restore AWDL now that we're done streaming
         AwdlSuppressor::setSuppressed(false);
-#endif
 
         // Perform a best-effort app quit
         if (shouldQuit) {
@@ -1460,16 +1364,9 @@ void Session::updateOptimalWindowDisplayMode()
         return;
     }
 
-    // On devices with slow GPUs, we will try to match the display mode
-    // to the video stream to offload the scaling work to the display.
-    //
-    // We also try to match the video resolution if we're using KMSDRM,
-    // because scaling on the display is generally higher quality than
-    // scaling performed by drmModeSetPlane().
-    bool matchVideo;
-    if (!Utils::getEnvironmentVariableOverride("MATCH_DISPLAY_MODE_TO_VIDEO", &matchVideo)) {
-        matchVideo = WMUtils::isGpuSlow() || QString(SDL_GetCurrentVideoDriver()) == "KMSDRM";
-    }
+    // Match the display mode to the video stream when explicitly requested.
+    bool matchVideo = false;
+    Utils::getEnvironmentVariableOverride("MATCH_DISPLAY_MODE_TO_VIDEO", &matchVideo);
 
     bestMode = desktopMode;
     bestMode.refresh_rate = 0;
@@ -1544,12 +1441,6 @@ void Session::toggleFullscreen()
 {
     bool fullScreen = !(SDL_GetWindowFlags(m_Window) & m_FullScreenFlag);
 
-#if defined(Q_OS_WIN32) || defined(Q_OS_DARWIN)
-    // Destroy the video decoder before toggling full-screen because D3D9 can try
-    // to put the window back into full-screen before we've managed to destroy
-    // the renderer. This leads to excessive flickering and can cause the window
-    // decorations to get messed up as SDL and D3D9 fight over the window style.
-    //
     // On Apple Silicon Macs, the AVSampleBufferDisplayLayer may cause WindowServer
     // to deadlock when transitioning out of fullscreen. Destroy the decoder before
     // exiting fullscreen as a workaround. See issue #973.
@@ -1557,12 +1448,10 @@ void Session::toggleFullscreen()
     delete m_VideoDecoder;
     m_VideoDecoder = nullptr;
     SDL_UnlockMutex(m_DecoderLock);
-#endif
 
     // Actually enter/leave fullscreen
     SDL_SetWindowFullscreen(m_Window, fullScreen ? m_FullScreenFlag : 0);
 
-#ifdef Q_OS_DARWIN
     // SDL on macOS has a bug that causes the window size to be reset to crazy
     // large dimensions when exiting out of true fullscreen mode. We can work
     // around the issue by manually resetting the position and size here.
@@ -1572,7 +1461,6 @@ void Session::toggleFullscreen()
         SDL_SetWindowSize(m_Window, width, height);
         SDL_SetWindowPosition(m_Window, x, y);
     }
-#endif
 
     // Input handler might need to start/stop keyboard grab after changing modes
     m_InputHandler->updateKeyboardGrabState();
@@ -1792,13 +1680,11 @@ void Session::start()
     // We're now active
     s_ActiveSession = this;
 
-#ifdef Q_OS_DARWIN
     // Start suppressing AWDL now, so any authorization prompt is shown
     // while we're connecting rather than on top of the stream window.
     if (m_Preferences->disableAwdl) {
         AwdlSuppressor::setSuppressed(true);
     }
-#endif
 
     // Initialize the gamepad code with our preferences
     // NB: m_InputHandler must be initialize before starting the connection.
@@ -1864,7 +1750,6 @@ QDateTime Session::snapshotTime() const
     return info.exists() ? info.lastModified() : QDateTime();
 }
 
-#ifdef Q_OS_DARWIN
 static void* getCocoaWindow(SDL_Window* window)
 {
     SDL_SysWMinfo info;
@@ -1874,7 +1759,6 @@ static void* getCocoaWindow(SDL_Window* window)
     }
     return nullptr;
 }
-#endif
 
 static Uint32 revealTimeoutCallback(Uint32, void*)
 {
@@ -1898,7 +1782,6 @@ void Session::revealStreamWindow()
         m_RevealTimeoutTimer = 0;
     }
 
-#ifdef Q_OS_DARWIN
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Revealing stream window");
 
     // A window that's already full screen fades in over the UI. Otherwise it's
@@ -1917,7 +1800,6 @@ void Session::revealStreamWindow()
         m_DeferFullScreenUntilReveal = false;
         SDL_SetWindowFullscreen(m_Window, m_FullScreenFlag);
     }
-#endif
 }
 
 void Session::interrupt()
@@ -1951,13 +1833,6 @@ void Session::exec()
 
     int x, y, width, height;
     getWindowDimensions(x, y, width, height);
-
-#ifdef STEAM_LINK
-    // We need a little delay before creating the window or we will trigger some kind
-    // of graphics driver bug on Steam Link that causes a jagged overlay to appear in
-    // the top right corner randomly.
-    SDL_Delay(500);
-#endif
 
     // Request at least 8 bits per color for GL
     SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
@@ -1993,13 +1868,9 @@ void Session::exec()
 #endif
     }
 
-    // We use only the computer name on macOS to match Apple conventions where the
-    // app name is featured in the menu bar and the document name is in the title bar.
-#ifdef Q_OS_DARWIN
+    // We use only the computer name to match Apple conventions where the app
+    // name is featured in the menu bar and the document name is in the title bar.
     std::string windowName = QString(m_Computer->name).toStdString();
-#else
-    std::string windowName = QString(m_Computer->name + " - Moonlight").toStdString();
-#endif
 
     m_Window = SDL_CreateWindow(windowName.c_str(),
                                 x,
@@ -2033,32 +1904,10 @@ void Session::exec()
 
     m_InputHandler->setWindow(m_Window);
 
-    QSvgRenderer svgIconRenderer(QString(":/res/moonlight.svg"));
-    QImage svgImage(ICON_SIZE, ICON_SIZE, QImage::Format_RGBA8888);
-    svgImage.fill(0);
-
-    QPainter svgPainter(&svgImage);
-    svgIconRenderer.render(&svgPainter);
-    SDL_Surface* iconSurface = SDL_CreateRGBSurfaceWithFormatFrom((void*)svgImage.constBits(),
-                                                                  svgImage.width(),
-                                                                  svgImage.height(),
-                                                                  32,
-                                                                  4 * svgImage.width(),
-                                                                  SDL_PIXELFORMAT_RGBA32);
-#ifndef Q_OS_DARWIN
-    // Other platforms seem to preserve our Qt icon when creating a new window.
-    if (iconSurface != nullptr) {
-        // This must be called before entering full-screen mode on Windows
-        // or our icon will not persist when toggling to windowed mode
-        SDL_SetWindowIcon(m_Window, iconSurface);
-    }
-#endif
-
     // Update the window display mode based on our current monitor
     // for if/when we enter full-screen mode.
     updateOptimalWindowDisplayMode();
 
-#ifdef Q_OS_DARWIN
     // When the UI played a launch transition, the stream window takes over
     // the UI window seamlessly: it starts exactly where the UI window is and
     // stays invisible until the first frame has been rendered.
@@ -2069,7 +1918,6 @@ void Session::exec()
         MacOSWindow::prepareStreamWindow(getCocoaWindow(m_Window), m_QtWindow, !m_IsFullScreen || fullScreenSpaces);
         m_RevealTimeoutTimer = SDL_AddTimer(4000, revealTimeoutCallback, nullptr);
     }
-#endif
 
     // Enter full screen if requested
     if (m_IsFullScreen && !m_DeferFullScreenUntilReveal) {
@@ -2084,18 +1932,9 @@ void Session::exec()
     // constrain the motion of the cursor. This allows the user to
     // easily reposition or resize the window.
     if (m_IsFullScreen || m_Preferences->absoluteMouseMode) {
-        // HACK: For Wayland, we wait until we get the first SDL_WINDOWEVENT_ENTER
-        // event where it seems to work consistently on GNOME. For other platforms,
-        // especially where SDL may call SDL_RecreateWindow(), we must only capture
-        // after the decoder is created.
-        if (strcmp(SDL_GetCurrentVideoDriver(), "wayland") == 0) {
-            // Native Wayland: Capture on SDL_WINDOWEVENT_ENTER
-            needsFirstEnterCapture = true;
-        }
-        else {
-            // X11/XWayland: Capture after decoder creation
-            needsPostDecoderCreationCapture = true;
-        }
+        // SDL may call SDL_RecreateWindow(), so capture only after the decoder
+        // is created.
+        needsPostDecoderCreationCapture = true;
     }
 
     // Disable the screen saver if requested
@@ -2103,13 +1942,8 @@ void Session::exec()
         SDL_DisableScreenSaver();
     }
 
-    // Hide Qt's fake mouse cursor on EGLFS systems
-    if (QGuiApplication::platformName() == "eglfs") {
-        QGuiApplication::setOverrideCursor(QCursor(Qt::BlankCursor));
-    }
-
-    // Set timer resolution to 1 ms on Windows for greater
-    // sleep precision and more accurate callback timing.
+    // Set timer resolution to 1 ms for greater sleep precision and
+    // more accurate callback timing.
     SDL_SetHint(SDL_HINT_TIMER_RESOLUTION, "1");
 
     int currentDisplayIndex = SDL_GetWindowDisplayIndex(m_Window);
@@ -2132,12 +1966,10 @@ void Session::exec()
     // because we want to suspend all Qt processing until the stream is over.
     SDL_Event event;
     for (;;) {
-#if SDL_VERSION_ATLEAST(2, 0, 18) && !defined(STEAM_LINK)
+#if SDL_VERSION_ATLEAST(2, 0, 18)
         // SDL 2.0.18 has a proper wait event implementation that uses platform
-        // support to block on events rather than polling on Windows, macOS, X11,
-        // and Wayland. It will fall back to 1 ms polling if a joystick is
-        // connected, so we don't use it for STEAM_LINK to ensure we only poll
-        // every 10 ms.
+        // support to block on events rather than polling. It will fall back to
+        // 1 ms polling if a joystick is connected.
         //
         // NB: This behavior was introduced in SDL 2.0.16, but had a few critical
         // issues that could cause indefinite timeouts, delayed joystick detection,
@@ -2152,13 +1984,7 @@ void Session::exec()
         // blocks this thread too long for high polling rate mice and high
         // refresh rate displays.
         if (!SDL_PollEvent(&event)) {
-#ifndef STEAM_LINK
             SDL_Delay(1);
-#else
-            // Waking every 1 ms to process input is too much for the low performance
-            // ARM core in the Steam Link, so we will wait 10 ms instead.
-            SDL_Delay(10);
-#endif
             presence.runCallbacks();
             continue;
         }
@@ -2241,8 +2067,8 @@ void Session::exec()
             }
 
             // We want to recreate the decoder for resizes (full-screen toggles) and the initial shown event.
-            // We use SDL_WINDOWEVENT_SIZE_CHANGED rather than SDL_WINDOWEVENT_RESIZED because the latter doesn't
-            // seem to fire when switching from windowed to full-screen on X11.
+            // We use SDL_WINDOWEVENT_SIZE_CHANGED rather than SDL_WINDOWEVENT_RESIZED because the latter
+            // doesn't seem to fire reliably when switching from windowed to full-screen.
             if (event.window.event != SDL_WINDOWEVENT_SIZE_CHANGED &&
                 (event.window.event != SDL_WINDOWEVENT_SHOWN || m_VideoDecoder != nullptr)) {
                 // Check that the window display hasn't changed. If it has, we want
@@ -2260,16 +2086,6 @@ void Session::exec()
                 }
 #endif
             }
-#ifdef Q_OS_WIN32
-            // We can get a resize event after being minimized. Recreating the renderer at that time can cause
-            // us to start drawing on the screen even while our window is minimized. Minimizing on Windows also
-            // moves the window to -32000, -32000 which can cause a false window display index change. Avoid
-            // that whole mess by never recreating the decoder if we're minimized.
-            else if (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_MINIMIZED) {
-                break;
-            }
-#endif
-
             if (m_FlushingWindowEventsRef > 0) {
                 // Ignore window events for renderer reset if flushing
                 SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -2488,9 +2304,6 @@ DispatchDeferredCleanup:
     m_InputHandler->setCaptureActive(false);
     SDL_EnableScreenSaver();
     SDL_SetHint(SDL_HINT_TIMER_RESOLUTION, "0");
-    if (QGuiApplication::platformName() == "eglfs") {
-        QGuiApplication::restoreOverrideCursor();
-    }
 
     // Raise any keys that are still down
     m_InputHandler->raiseAllKeys();
@@ -2544,21 +2357,15 @@ DispatchDeferredCleanup:
     }
     m_StreamWindowRevealPending = false;
 
-#ifdef Q_OS_DARWIN
     // Bring the UI back exactly where the stream window was
     if (m_DeferStreamStart && m_Window != nullptr &&
             !(SDL_GetWindowFlags(m_Window) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_MINIMIZED))) {
         MacOSWindow::adoptStreamWindowFrame(m_QtWindow, getCocoaWindow(m_Window));
     }
-#endif
 
     // This must be called after the decoder is deleted, because
     // the renderer may want to interact with the window
     SDL_DestroyWindow(m_Window);
-
-    if (iconSurface != nullptr) {
-        SDL_FreeSurface(iconSurface);
-    }
 
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
 

@@ -1,22 +1,44 @@
-import QtQuick 2.0
-import QtQuick.Controls 2.2
-import QtQuick.Layouts 1.3
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Controls.impl
+import QtQuick.Layouts
 
+// macOS toolbar button: small monochrome glyph with a rounded hover background
 ToolButton {
+    id: button
     property string iconSource
-
-    // Used by the macOS variant to decide whether to tint the icon
     property bool monochrome: true
 
     activeFocusOnTab: true
 
-    icon.source: iconSource
-    icon.width: background.width
-    icon.height: background.height
+    implicitWidth: 34
+    implicitHeight: 28
+    Layout.alignment: Qt.AlignVCenter
 
-    // This determines the size of the Material highlight. We increase it
-    // from the default because we use larger than normal icons for TV readability.
-    Layout.preferredHeight: parent.height
+    contentItem: IconImage {
+        source: button.iconSource
+        sourceSize.width: 18
+        sourceSize.height: 18
+        fillMode: Image.PreserveAspectFit
+        color: button.monochrome ? button.palette.windowText : "transparent"
+        opacity: button.enabled ? (button.pressed ? 1.0 : 0.8) : 0.3
+    }
+
+    background: Rectangle {
+        radius: 6
+        color: button.palette.windowText
+        opacity: button.pressed ? 0.16 : (button.hovered ? 0.08 : 0)
+
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -2
+            radius: 8
+            color: "transparent"
+            border.color: button.palette.highlight
+            border.width: 3
+            opacity: button.visualFocus ? 1 : 0
+        }
+    }
 
     Keys.onReturnPressed: {
         clicked()

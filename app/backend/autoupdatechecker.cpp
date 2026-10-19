@@ -34,7 +34,6 @@ void AutoUpdateChecker::start()
         return;
     }
 
-#if defined(Q_OS_WIN32) || defined(Q_OS_DARWIN) || defined(STEAM_LINK) || defined(APP_IMAGE) // Only run update checker on platforms without auto-update
 #if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0) && QT_VERSION < QT_VERSION_CHECK(5, 15, 1) && !defined(QT_NO_BEARERMANAGEMENT)
     // HACK: Set network accessibility to work around QTBUG-80947 (introduced in Qt 5.14.0 and fixed in Qt 5.15.1)
     QT_WARNING_PUSH
@@ -52,7 +51,6 @@ void AutoUpdateChecker::start()
     request.setAttribute(QNetworkRequest::HTTP2AllowedAttribute, true);
 #endif
     m_Nam->get(request);
-#endif
 }
 
 void AutoUpdateChecker::parseStringToVersionQuad(QString& string, QVector<int>& version)
@@ -65,17 +63,9 @@ void AutoUpdateChecker::parseStringToVersionQuad(QString& string, QVector<int>& 
 
 QString AutoUpdateChecker::getPlatform()
 {
-#if defined(STEAM_LINK)
-    return QStringLiteral("steamlink");
-#elif defined(APP_IMAGE)
-    return QStringLiteral("appimage");
-#elif defined(Q_OS_DARWIN) && QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     // Qt 6 changed this from 'osx' to 'macos'. Use the old one
     // to be consistent (and not require another entry in the manifest).
     return QStringLiteral("osx");
-#else
-    return QSysInfo::productType();
-#endif
 }
 
 int AutoUpdateChecker::compareVersion(QVector<int>& version1, QVector<int>& version2) {

@@ -3,23 +3,11 @@ SUBDIRS = \
     moonlight-common-c \
     qmdnsengine \
     app \
-    h264bitstream
+    h264bitstream \
+    awdl-helper
 
 # Build the dependencies in parallel before the final app
-app.depends = qmdnsengine moonlight-common-c h264bitstream
-macx {
-    SUBDIRS += awdl-helper
-    app.depends += awdl-helper
-}
-win32:!winrt {
-    SUBDIRS += AntiHooking
-    app.depends += AntiHooking
-}
+app.depends = qmdnsengine moonlight-common-c h264bitstream awdl-helper
 
 # Support debug and release builds from command line for CI
 CONFIG += debug_and_release
-
-# Run our compile tests
-load(configure)
-qtCompileTest(SL)
-qtCompileTest(EGL)

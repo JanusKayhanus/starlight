@@ -5,9 +5,7 @@
 #include "path.h"
 #include "utils.h"
 
-#ifdef Q_OS_DARWIN
 #include "macoscursor.h"
-#endif
 
 #include <QtGlobal>
 #include <QDir>
@@ -32,18 +30,12 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
       m_StreamHeight(streamHeight),
       m_AbsoluteMouseMode(prefs.absoluteMouseMode),
       m_AbsoluteTouchMode(prefs.absoluteTouchMode),
-      m_DisabledTouchFeedback(false),
       m_LeftButtonReleaseTimer(0),
       m_RightButtonReleaseTimer(0),
       m_DragTimer(0),
       m_DragButton(0),
       m_NumFingersDown(0)
 {
-    // System keys are always captured when running without a DE
-    if (!WMUtils::isRunningDesktopEnvironment()) {
-        m_CaptureSystemKeysMode = StreamingPreferences::CSK_ALWAYS;
-    }
-
     // SDL3 breaks our auto-capture-on-leave logic because the mouse focus has already
     // been lost by the time we attempt to call SDL_CaptureMouse(). Fortunately, SDL3's
     // own auto-capture logic seems to be stable now (unlike SDL2), so we can rely on
@@ -92,12 +84,12 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
     m_SpecialKeyCombos[KeyComboUngrabInput].keyCombo = KeyComboUngrabInput;
     m_SpecialKeyCombos[KeyComboUngrabInput].keyCode = SDLK_z;
     m_SpecialKeyCombos[KeyComboUngrabInput].scanCode = SDL_SCANCODE_Z;
-    m_SpecialKeyCombos[KeyComboUngrabInput].enabled = WMUtils::isRunningDesktopEnvironment();
+    m_SpecialKeyCombos[KeyComboUngrabInput].enabled = true;
 
     m_SpecialKeyCombos[KeyComboToggleFullScreen].keyCombo = KeyComboToggleFullScreen;
     m_SpecialKeyCombos[KeyComboToggleFullScreen].keyCode = SDLK_x;
     m_SpecialKeyCombos[KeyComboToggleFullScreen].scanCode = SDL_SCANCODE_X;
-    m_SpecialKeyCombos[KeyComboToggleFullScreen].enabled = WMUtils::isRunningDesktopEnvironment();
+    m_SpecialKeyCombos[KeyComboToggleFullScreen].enabled = true;
 
     m_SpecialKeyCombos[KeyComboToggleStatsOverlay].keyCombo = KeyComboToggleStatsOverlay;
     m_SpecialKeyCombos[KeyComboToggleStatsOverlay].keyCode = SDLK_s;
@@ -117,7 +109,7 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
     m_SpecialKeyCombos[KeyComboToggleMinimize].keyCombo = KeyComboToggleMinimize;
     m_SpecialKeyCombos[KeyComboToggleMinimize].keyCode = SDLK_d;
     m_SpecialKeyCombos[KeyComboToggleMinimize].scanCode = SDL_SCANCODE_D;
-    m_SpecialKeyCombos[KeyComboToggleMinimize].enabled = WMUtils::isRunningDesktopEnvironment();
+    m_SpecialKeyCombos[KeyComboToggleMinimize].enabled = true;
 
     m_SpecialKeyCombos[KeyComboPasteText].keyCombo = KeyComboPasteText;
     m_SpecialKeyCombos[KeyComboPasteText].keyCode = SDLK_v;
@@ -137,7 +129,7 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
     m_SpecialKeyCombos[KeyComboToggleKeyboardGrab].keyCombo = KeyComboToggleKeyboardGrab;
     m_SpecialKeyCombos[KeyComboToggleKeyboardGrab].keyCode = SDLK_k;
     m_SpecialKeyCombos[KeyComboToggleKeyboardGrab].scanCode = SDL_SCANCODE_K;
-    m_SpecialKeyCombos[KeyComboToggleKeyboardGrab].enabled = WMUtils::isRunningDesktopEnvironment();
+    m_SpecialKeyCombos[KeyComboToggleKeyboardGrab].enabled = true;
 
     m_OldIgnoreDevices = SDL_GetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES);
     m_OldIgnoreDevicesExcept = SDL_GetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT);
@@ -237,9 +229,7 @@ SdlInputHandler::~SdlInputHandler()
         }
     }
 
-#ifdef Q_OS_DARWIN
     MacOSCursor::confineToRegion(m_Window, nullptr, false);
-#endif
 
     SDL_RemoveTimer(m_LongPressTimer);
     SDL_RemoveTimer(m_LeftButtonReleaseTimer);
@@ -264,13 +254,6 @@ SdlInputHandler::~SdlInputHandler()
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES, m_OldIgnoreDevices.toUtf8());
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT, m_OldIgnoreDevicesExcept.toUtf8());
 
-#ifdef STEAM_LINK
-    // Hide SDL's cursor on Steam Link after quitting the stream.
-    // FIXME: We should also do this for other situations where SDL
-    // and Qt will draw their own mouse cursors like KMSDRM or RPi
-    // video backends.
-    SDL_ShowCursor(SDL_DISABLE);
-#endif
 }
 
 void SdlInputHandler::setWindow(SDL_Window *window)
@@ -323,8 +306,8 @@ void SdlInputHandler::updateKeyboardGrabState()
     SDL_SetHint(SDL_HINT_WINDOWS_NO_CLOSE_ON_ALT_F4, shouldGrab ? "1" : "0");
 
 #if SDL_VERSION_ATLEAST(2, 0, 15)
-    // On SDL 2.0.15+, we can get keyboard-only grab on Win32, X11, and Wayland.
-    // SDL 2.0.18 adds keyboard grab on macOS (if built with non-AppStore APIs).
+    // SDL 2.0.15+ supports keyboard-only grab, and SDL 2.0.18 adds it on
+    // macOS (if built with non-AppStore APIs).
     SDL_SetWindowKeyboardGrab(m_Window, shouldGrab ? SDL_TRUE : SDL_FALSE);
 #endif
 
@@ -420,12 +403,11 @@ void SdlInputHandler::handleTouchFingerEvent(SDL_TouchFingerEvent* event)
         // for trackpads, but we want to handle those in the mouse path.
         return;
     }
-#elif defined(Q_OS_DARWIN)
+#else
     // SDL2 sends touch events from trackpads by default on
     // macOS. This totally screws our actual mouse handling,
-    // so we must explicitly ignore touch events on macOS
-    // until SDL 2.0.10 where we have SDL_GetTouchDeviceType()
-    // to tell them apart.
+    // so we must explicitly ignore touch events until SDL 2.0.10
+    // where we have SDL_GetTouchDeviceType() to tell them apart.
     return;
 #endif
 

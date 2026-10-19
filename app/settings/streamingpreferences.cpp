@@ -110,19 +110,7 @@ void StreamingPreferences::reload()
 
     int defaultVer = settings.value(SER_DEFAULTVER, 0).toInt();
 
-#ifdef Q_OS_DARWIN
     recommendedFullScreenMode = WindowMode::WM_FULLSCREEN_DESKTOP;
-#else
-    // Wayland doesn't support modesetting, so use fullscreen desktop mode
-    // unless we have a slow GPU (which can take advantage of wp_viewporter
-    // to reduce GPU load with lower resolution video streams).
-    if (WMUtils::isRunningWayland() && !WMUtils::isGpuSlow()) {
-        recommendedFullScreenMode = WindowMode::WM_FULLSCREEN_DESKTOP;
-    }
-    else {
-        recommendedFullScreenMode = WindowMode::WM_FULLSCREEN;
-    }
-#endif
 
     width = settings.value(SER_WIDTH, 1920).toInt();
     height = settings.value(SER_HEIGHT, 1080).toInt();
@@ -180,15 +168,8 @@ void StreamingPreferences::reload()
 
     // Perform default settings updates as required based on last default version
     if (defaultVer < 1) {
-#ifdef Q_OS_DARWIN
-        // Update window mode setting on macOS from full-screen (old default) to borderless windowed (new default)
+        // Update window mode setting from full-screen (old default) to borderless windowed (new default)
         if (windowMode == WindowMode::WM_FULLSCREEN) {
-            windowMode = WindowMode::WM_FULLSCREEN_DESKTOP;
-        }
-#endif
-    }
-    if (defaultVer < 2) {
-        if (windowMode == WindowMode::WM_FULLSCREEN && WMUtils::isRunningWayland()) {
             windowMode = WindowMode::WM_FULLSCREEN_DESKTOP;
         }
     }

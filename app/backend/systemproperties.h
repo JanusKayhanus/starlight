@@ -16,15 +16,8 @@ public:
     ~SystemProperties();
 
     // Static properties queried synchronously during the constructor
-    Q_PROPERTY(bool isRunningWayland MEMBER isRunningWayland CONSTANT)
-    Q_PROPERTY(bool isRunningXWayland MEMBER isRunningXWayland CONSTANT)
-    Q_PROPERTY(bool isWow64 MEMBER isWow64 CONSTANT)
-    Q_PROPERTY(bool isDarwin MEMBER isDarwin CONSTANT)
     Q_PROPERTY(QString friendlyNativeArchName MEMBER friendlyNativeArchName CONSTANT)
-    Q_PROPERTY(bool hasDesktopEnvironment MEMBER hasDesktopEnvironment CONSTANT)
-    Q_PROPERTY(bool hasBrowser MEMBER hasBrowser CONSTANT)
     Q_PROPERTY(bool hasDiscordIntegration MEMBER hasDiscordIntegration CONSTANT)
-    Q_PROPERTY(bool usesMaterial3Theme MEMBER usesMaterial3Theme CONSTANT)
     Q_PROPERTY(QString versionString MEMBER versionString CONSTANT)
 
     // Properties queried asynchronously (startAsyncLoad() must be called!)
@@ -58,16 +51,9 @@ private:
     SDL_Window* testWindow = nullptr;
 
     // Properties set by the constructor
-    bool isRunningWayland;
-    bool isRunningXWayland;
-    bool isWow64;
     QString friendlyNativeArchName;
-    bool hasDesktopEnvironment;
-    bool hasBrowser;
     bool hasDiscordIntegration;
     QString versionString;
-    bool usesMaterial3Theme;
-    bool isDarwin;
 
     // Properties only set if startAsyncLoad() is called
     bool hasHardwareAcceleration;

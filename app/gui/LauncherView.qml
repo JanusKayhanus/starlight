@@ -19,7 +19,7 @@ import AutoUpdateChecker 1.0
 // in the title bar, the hero shows the running or selected app (or what the
 // selected computer needs, like pairing), and the computer's apps sit below it.
 //
-// This replaces PcView and AppView when using the native macOS style.
+// This is the macOS launcher view.
 FocusScope {
     id: launcher
     objectName: qsTr("Computers")
@@ -551,7 +551,7 @@ FocusScope {
                                 onClicked: addPcDialog.open()
                             }
                             LauncherButton {
-                                visible: hero.mode === "none" && SystemProperties.hasBrowser
+                                visible: hero.mode === "none"
                                 text: qsTr("Setup Guide")
                                 onClicked: Qt.openUrlExternally("https://github.com/moonlight-stream/moonlight-docs/wiki/Setup-Guide")
                             }
@@ -580,7 +580,7 @@ FocusScope {
                             }
 
                             LauncherButton {
-                                visible: hero.mode === "unsupported" && SystemProperties.hasBrowser
+                                visible: hero.mode === "unsupported"
                                 text: qsTr("Get Latest Moonlight")
                                 onClicked: Qt.openUrlExternally("https://github.com/moonlight-stream/moonlight-qt/releases")
                             }

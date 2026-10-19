@@ -48,7 +48,7 @@ void SdlInputHandler::handleRelativeFingerEvent(SDL_TouchFingerEvent* event)
 {
     int fingerIndex = -1;
 
-    // Observations on Windows 10: x and y appear to be relative to 0,0 of the window client area.
+    // SDL reports x and y relative to the top-left of the window client area.
     // Although SDL documentation states they are 0.0 - 1.0 float values, they can actually be higher
     // or lower than those values as touch events continue for touches started within the client area that
     // leave the client area during a drag motion.

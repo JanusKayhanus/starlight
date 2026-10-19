@@ -6,7 +6,7 @@
 #define VK_0 0x30
 #define VK_A 0x41
 
-// These are real Windows VK_* codes
+// These are the host VK_* codes used by the streaming protocol
 #ifndef VK_F1
 #define VK_F1 0x70
 #define VK_F13 0x7C

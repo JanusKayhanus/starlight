@@ -82,14 +82,14 @@ QString Path::getDataFilePath(QString fileName)
         return candidatePath;
     }
 
-    // Now check the data directories (for Linux, in particular)
+    // Now check the standard application data directories
     candidatePath = QStandardPaths::locate(QStandardPaths::AppDataLocation, fileName);
     if (!candidatePath.isEmpty() && QFile::exists(candidatePath)) {
         qInfo() << "Found" << fileName << "at" << candidatePath;
         return candidatePath;
     }
 
-    // Now try the directory of our app installation (for Windows, if current dir doesn't find it)
+    // Now try the directory of our app installation
     candidatePath = QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(fileName);
     if (QFile::exists(candidatePath)) {
         qInfo() << "Found" << fileName << "at" << candidatePath;
@@ -114,13 +114,9 @@ void Path::initialize(bool portable)
         s_CacheDir = QDir::currentPath() + "/cache";
     }
     else {
-#ifdef Q_OS_DARWIN
-        // On macOS, $TMPDIR is some random folder under /var/folders/ that nobody can
+        // $TMPDIR is some random folder under /var/folders/ that nobody can
         // easily find, so use the system's global tmp directory instead.
         s_LogDir = "/tmp";
-#else
-        s_LogDir = QDir::tempPath();
-#endif
         s_CacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
         s_BoxArtCacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/boxart";
         s_QmlCacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/qmlcache";

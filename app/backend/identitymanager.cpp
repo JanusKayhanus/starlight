@@ -165,8 +165,7 @@ IdentityManager::getSslKey()
 {
     if (m_CachedSslKey.isNull()) {
         // This seemingly useless const_cast is required for old OpenSSL headers
-        // where BIO_new_mem_buf's parameter is not declared const like those on
-        // the Steam Link hardware.
+        // where BIO_new_mem_buf's parameter is not declared const.
         BIO* bio = BIO_new_mem_buf(const_cast<char*>(m_CachedPrivateKey.constData()), -1);
         THROW_BAD_ALLOC_IF_NULL(bio);
 
@@ -177,12 +176,8 @@ IdentityManager::getSslKey()
         THROW_BAD_ALLOC_IF_NULL(bio);
 
         // We must write out our PEM in the old PKCS1 format for SecureTransport
-        // on macOS/iOS to be able to read it.
-#ifdef Q_OS_DARWIN
+        // to be able to read it.
         PEM_write_bio_PrivateKey_traditional(bio, pk, nullptr, nullptr, 0, nullptr, 0);
-#else
-        PEM_write_bio_PrivateKey(bio, pk, nullptr, nullptr, 0, nullptr, 0);
-#endif
 
         BUF_MEM* mem;
         BIO_get_mem_ptr(bio, &mem);

@@ -4,13 +4,11 @@
 
 #include <climits>
 
-#ifdef Q_OS_DARWIN
 #include "dockshortcut.h"
 
 #include <QDrag>
 #include <QMimeData>
 #include <QPixmap>
-#endif
 
 AppModel::AppModel(QObject *parent)
     : QAbstractListModel(parent)
@@ -282,7 +280,6 @@ QString AppModel::dragAppToDock(int appIndex)
 {
     Q_ASSERT(appIndex < m_VisibleApps.count());
 
-#ifdef Q_OS_DARWIN
     NvApp app = m_VisibleApps.at(appIndex);
     QString uuid, name;
 
@@ -320,9 +317,6 @@ QString AppModel::dragAppToDock(int appIndex)
     // Copy and link only, so dropping into a Finder window can't move the shortcut away
     drag->exec(Qt::CopyAction | Qt::LinkAction, Qt::LinkAction);
     return QString();
-#else
-    return tr("Adding to the Dock is only supported on macOS.");
-#endif
 }
 
 void AppModel::setAppDirectLaunch(int appIndex, bool directLaunch)
