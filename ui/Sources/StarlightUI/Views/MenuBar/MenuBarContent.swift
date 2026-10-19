@@ -138,7 +138,7 @@ private struct MenuBarHostRow: View {
         switch host.status {
         case .online, .busy:
             Button("Connect") {
-                if let request = store.sessionRequest(for: host) {
+                if let request = store.connect(to: host) {
                     openWindow(id: WindowID.session, value: request)
                     NSApp.activate()
                 }

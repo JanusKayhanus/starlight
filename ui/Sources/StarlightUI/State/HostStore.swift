@@ -28,6 +28,10 @@ public final class HostStore {
     /// Open stream windows, in the order they were opened.
     public private(set) var sessions: [SessionModel] = []
 
+    /// Streams `app` from `host` without a stream window, for hosts the app
+    /// streams some other way. Return false to open the stream window as usual.
+    @ObservationIgnored public var launchesDirectly: ((RemoteHost, HostApp) -> Bool)?
+
     private let service: any HostService
     private let makeStreamController: @MainActor () -> any StreamControlling
     private var pollTask: Task<Void, Never>?
@@ -98,6 +102,18 @@ public final class HostStore {
     public func sessionRequest(for host: RemoteHost, app: HostApp? = nil) -> SessionRequest? {
         guard host.isPaired, let app = app ?? selectedApp(for: host) else { return nil }
         return SessionRequest(hostID: host.id, appID: app.id)
+    }
+
+    /// Starts streaming `app` (or the host's default app) from `host`. Returns
+    /// the stream window to open, or nil if there's nothing to open because
+    /// `launchesDirectly` handled it or there's nothing to launch.
+    public func connect(to host: RemoteHost, app: HostApp? = nil) -> SessionRequest? {
+        guard let request = sessionRequest(for: host, app: app),
+              let app = host.apps.first(where: { $0.id == request.appID }) else { return nil }
+        if launchesDirectly?(host, app) == true {
+            return nil
+        }
+        return request
     }
 
     public func wake(_ host: RemoteHost) {

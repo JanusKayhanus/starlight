@@ -151,7 +151,7 @@ struct HostCard: View {
     }
 
     private func connect(_ app: HostApp?) {
-        guard let request = store.sessionRequest(for: host, app: app) else { return }
+        guard let request = store.connect(to: host, app: app) else { return }
         openWindow(id: WindowID.session, value: request)
     }
 }
