@@ -33,7 +33,9 @@
 
 #define CONN_TEST_SERVER "qt.conntest.moonlight-stream.org"
 
-// Matches the Qt build's QUIT_TIMEOUT_MS
+// Match the Qt build's LAUNCH_TIMEOUT_MS, RESUME_TIMEOUT_MS and QUIT_TIMEOUT_MS
+#define LAUNCH_TIMEOUT_SECONDS 120
+#define RESUME_TIMEOUT_SECONDS 30
 #define QUIT_TIMEOUT_SECONDS 30
 
 namespace {
@@ -1516,7 +1518,8 @@ bool Session::startConnection()
     std::string error;
     if (!httpsGet(m_Host->address, m_Host->httpsPort, path,
                   m_Client->certPem, m_Client->keyPem, m_Host->serverCertPem,
-                  launchResponse, error)) {
+                  launchResponse, error,
+                  verb == "resume" ? RESUME_TIMEOUT_SECONDS : LAUNCH_TIMEOUT_SECONDS)) {
         displayLaunchError("Unable to start the stream: " + error);
         return false;
     }
