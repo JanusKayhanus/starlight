@@ -4,6 +4,7 @@
 #include "streaming/awdlsuppressor.h"
 #include "backend/richpresencemanager.h"
 #include "video/ffmpeg.h"
+#include "hostrequests.h"
 #include "http.h"
 #include "macoswindowinfo.h"
 #include "serverinfo.h"
@@ -530,9 +531,8 @@ bool Session::initialize()
     }
 
     if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "SDL_InitSubSystem(SDL_INIT_VIDEO) failed: %s",
-                     SDL_GetError());
+        displayLaunchError(std::string("Unable to initialize video: ") + SDL_GetError());
+        reportLaunchFailure();
         return false;
     }
 
@@ -552,10 +552,10 @@ bool Session::initialize()
     // Create a hidden window to use for decoder initialization tests
     SDL_Window* testWindow = StreamUtils::createTestWindow();
     if (!testWindow) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "Failed to create window for hardware decode test: %s",
-                     SDL_GetError());
+        displayLaunchError(std::string("Failed to create window for hardware decode test: ") +
+                           SDL_GetError());
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
+        reportLaunchFailure();
         return false;
     }
 
@@ -788,6 +788,7 @@ bool Session::initialize()
 
     if (!ret) {
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
+        reportLaunchFailure();
         return false;
     }
 
@@ -798,11 +799,35 @@ void Session::emitLaunchWarning(const std::string& text)
 {
     m_LaunchWarnings.push_back(text);
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Launch warning: %s", text.c_str());
+    if (m_Callbacks.launchWarning) {
+        m_Callbacks.launchWarning(text);
+    }
 }
 
+// May be called from moonlight-common-c's threads. The first error is the
+// one reported: later ones are usually consequences of it.
 void Session::displayLaunchError(const std::string& text)
 {
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Launch error: %s", text.c_str());
+
+    std::lock_guard<std::mutex> lock(m_ErrorLock);
+    if (m_ErrorMessage.empty()) {
+        m_ErrorMessage = text;
+    }
+}
+
+std::string Session::errorMessage() const
+{
+    std::lock_guard<std::mutex> lock(m_ErrorLock);
+    return m_ErrorMessage;
+}
+
+void Session::reportLaunchFailure()
+{
+    if (m_Callbacks.launchFailed) {
+        std::string message = errorMessage();
+        m_Callbacks.launchFailed(message.empty() ? "Unable to start the stream" : message);
+    }
 }
 
 bool Session::validateLaunch(SDL_Window* testWindow)
@@ -1470,7 +1495,7 @@ bool Session::startConnection()
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "Host is running app %d; quitting it to start %s",
                     m_Host->currentGameId, m_Host->appName.c_str());
-        if (!quitHostApp()) {
+        if (!quitHostApp(&m_LaunchCancel)) {
             displayLaunchError("Unable to quit the app that is running on " + m_Host->name +
                                " in order to start " + m_Host->appName + ".");
             return false;
@@ -1519,8 +1544,10 @@ bool Session::startConnection()
     if (!httpsGet(m_Host->address, m_Host->httpsPort, path,
                   m_Client->certPem, m_Client->keyPem, m_Host->serverCertPem,
                   launchResponse, error,
-                  verb == "resume" ? RESUME_TIMEOUT_SECONDS : LAUNCH_TIMEOUT_SECONDS)) {
-        displayLaunchError("Unable to start the stream: " + error);
+                  verb == "resume" ? RESUME_TIMEOUT_SECONDS : LAUNCH_TIMEOUT_SECONDS,
+                  nullptr, &m_LaunchCancel)) {
+        displayLaunchError(m_LaunchCancel.isCancelled() ? std::string("The connection was cancelled") :
+                                                          "Unable to start the stream: " + error);
         return false;
     }
 
@@ -1617,56 +1644,39 @@ void Session::start()
         AwdlSuppressor::setSuppressed(false);
 
         s_ActiveSession = nullptr;
+        reportLaunchFailure();
         return;
     }
 
     m_StreamStarted = true;
     exec();
+
+    if (m_Callbacks.ended) {
+        std::string error;
+        if (m_UnexpectedTermination) {
+            error = errorMessage();
+            if (error.empty()) {
+                error = "The connection to " + m_Host->name + " ended unexpectedly";
+            }
+        }
+        m_Callbacks.ended(error);
+    }
 }
 
-bool Session::quitHostApp()
+bool Session::quitHostApp(const CancellationToken* cancel)
 {
-    std::string response;
     std::string error;
-    if (!httpsGet(m_Host->address, m_Host->httpsPort, "/cancel",
-                  m_Client->certPem, m_Client->keyPem, m_Host->serverCertPem,
-                  response, error, QUIT_TIMEOUT_SECONDS)) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "Unable to quit the host app: %s", error.c_str());
+    if (!quitRunningApp(*m_Host, *m_Client, error, cancel)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Unable to quit the host app: %s", error.c_str());
         return false;
     }
-
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Quit response: %s", response.c_str());
-
-    std::string statusCode = xmlAttribute(response, "status_code");
-    if (!statusCode.empty() && statusCode != "200") {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "Host rejected the quit request: %s (%s)",
-                    xmlAttribute(response, "status_message").c_str(),
-                    statusCode.c_str());
-        return false;
-    }
-
-    // Newer GFE versions will just return success even if quitting fails
-    // if we're not the original requester, so check that it actually quit.
-    if (!fetchServerInfo(*m_Host, *m_Client, error)) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "Unable to confirm the host app quit: %s", error.c_str());
-        return false;
-    }
-    if (m_Host->currentGameId != 0) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "The host app is still running (app %d). It may have been started by another client.",
-                    m_Host->currentGameId);
-        return false;
-    }
-
     return true;
 }
 
 void Session::interrupt()
 {
-    // Stop any connection in progress
+    // Stop the launch request and any connection in progress
+    m_LaunchCancel.cancel();
     LiInterruptConnection();
 
     // Inject a quit event to our SDL event loop

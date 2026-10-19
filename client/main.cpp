@@ -119,8 +119,19 @@ int main(int argc, char** argv)
                 preferences->enableYUV444 ? "on" : "off");
 
     Session session(&host, &client, preferences);
+
+    SessionCallbacks callbacks;
+    callbacks.launchFailed = [](const std::string& message) {
+        fprintf(stderr, "Unable to start the stream: %s\n", message.c_str());
+    };
+    callbacks.ended = [](const std::string& error) {
+        if (!error.empty()) {
+            fprintf(stderr, "The stream ended: %s\n", error.c_str());
+        }
+    };
+    session.setCallbacks(callbacks);
+
     if (!session.initialize()) {
-        fprintf(stderr, "Unable to initialize the streaming session\n");
         SDL_Quit();
         return 1;
     }

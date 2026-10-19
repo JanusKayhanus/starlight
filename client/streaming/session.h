@@ -3,10 +3,13 @@
 #include <Limelight.h>
 #include <opus_multistream.h>
 
+#include <functional>
 #include <map>
+#include <mutex>
 #include <string>
 #include <vector>
 
+#include "cancellation.h"
 #include "settings.h"
 #include "settings/streamingpreferences.h"
 #include "input/input.h"
@@ -93,6 +96,23 @@ public:
     }
 };
 
+// What a Session reports to its owner. Each callback is optional and is
+// invoked on the thread that called initialize() or start().
+struct SessionCallbacks
+{
+    // The stream couldn't start (from initialize() or start()). Called once.
+    std::function<void(const std::string& message)> launchFailed;
+
+    // A problem that doesn't stop the stream, such as falling back to
+    // software decoding.
+    std::function<void(const std::string& message)> launchWarning;
+
+    // The stream started and has now ended. `error` is empty if it ended
+    // normally (the user quit or the host ended it gracefully), and explains
+    // the disconnect otherwise.
+    std::function<void(const std::string& error)> ended;
+};
+
 class Session
 {
     friend class SdlInputHandler;
@@ -101,9 +121,20 @@ public:
     explicit Session(HostConfig* host, ClientConfig* client, StreamingPreferences* preferences = nullptr);
     virtual ~Session();
 
+    void setCallbacks(SessionCallbacks callbacks)
+    {
+        m_Callbacks = std::move(callbacks);
+    }
+
     bool initialize();
     void start();
+
+    // Stops a connection in progress, including the launch request, and ends
+    // a running stream. Safe to call from any thread.
     void interrupt();
+
+    // Why the launch failed or the stream ended unexpectedly; empty otherwise.
+    std::string errorMessage() const;
 
     // True if the stream connection was established and ran to completion
     bool wasSuccessful() const
@@ -163,7 +194,9 @@ private:
 
     void cycleDisplay();
 
-    bool quitHostApp();
+    bool quitHostApp(const CancellationToken* cancel = nullptr);
+
+    void reportLaunchFailure();
 
     enum class DecoderAvailability {
         None,
@@ -258,6 +291,11 @@ private:
     int m_FlushingWindowEventsRef;
     std::vector<std::string> m_LaunchWarnings;
     bool m_ShouldExit;
+
+    SessionCallbacks m_Callbacks;
+    mutable std::mutex m_ErrorLock;
+    std::string m_ErrorMessage; // Guarded by m_ErrorLock
+    CancellationToken m_LaunchCancel;
 
     bool m_LaunchFailed;
     bool m_StreamStarted;
