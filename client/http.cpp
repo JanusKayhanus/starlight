@@ -1,7 +1,9 @@
 #include "http.h"
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netdb.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -10,7 +12,9 @@
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 
+#include <algorithm>
 #include <cerrno>
+#include <chrono>
 
 #include <SDL.h>
 #include <cstdio>
@@ -20,7 +24,52 @@
 
 namespace {
 
-int connectTcp(const std::string& host, uint16_t port, int timeoutSeconds, std::string& error)
+// How often a wait wakes up to check for cancellation.
+constexpr int kCancelPollIntervalMs = 100;
+
+// Waits until `fd` is ready for `events`. `timeoutSeconds` bounds the wait;
+// 0 waits indefinitely. Returns false (with `error` set) on timeout or
+// cancellation. An error condition on the socket counts as ready, so the
+// caller's next operation reports it.
+bool waitForSocket(int fd, short events, int timeoutSeconds,
+                   const CancellationToken* cancel, std::string& error)
+{
+    using Clock = std::chrono::steady_clock;
+    const auto deadline = Clock::now() + std::chrono::seconds(timeoutSeconds);
+
+    for (;;) {
+        if (isCancelled(cancel)) {
+            error = kCancelledError;
+            return false;
+        }
+
+        int waitMs = kCancelPollIntervalMs;
+        if (timeoutSeconds > 0) {
+            auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now()).count();
+            if (remaining <= 0) {
+                error = "The request timed out";
+                return false;
+            }
+            waitMs = (int)std::min<long long>(waitMs, remaining);
+        }
+
+        struct pollfd pfd = {};
+        pfd.fd = fd;
+        pfd.events = events;
+        int ret = poll(&pfd, 1, waitMs);
+        if (ret > 0) {
+            return true;
+        }
+        if (ret < 0 && errno != EINTR) {
+            error = std::string("poll failed: ") + strerror(errno);
+            return false;
+        }
+    }
+}
+
+// Connects a non-blocking socket, so that every later wait can be cancelled.
+int connectTcp(const std::string& host, uint16_t port, int timeoutSeconds,
+               const CancellationToken* cancel, std::string& error)
 {
     struct addrinfo hints = {};
     hints.ai_family = AF_UNSPEC;
@@ -35,25 +84,43 @@ int connectTcp(const std::string& host, uint16_t port, int timeoutSeconds, std::
     }
 
     int fd = -1;
-    for (struct addrinfo* ai = result; ai != nullptr; ai = ai->ai_next) {
+    for (struct addrinfo* ai = result; ai != nullptr && !isCancelled(cancel); ai = ai->ai_next) {
         fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (fd < 0) {
             continue;
         }
 
-        if (timeoutSeconds > 0) {
-            struct timeval timeout = {};
-            timeout.tv_sec = timeoutSeconds;
-            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-            setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+        // Report a closed connection as an error from send() instead of
+        // killing the process with SIGPIPE.
+        int noSigPipe = 1;
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe));
+        fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+
+        int connectError = 0;
+        if (connect(fd, ai->ai_addr, ai->ai_addrlen) != 0) {
+            connectError = errno;
+            if (connectError == EINPROGRESS) {
+                std::string waitError;
+                if (waitForSocket(fd, POLLOUT, timeoutSeconds, cancel, waitError)) {
+                    socklen_t length = sizeof(connectError);
+                    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &connectError, &length) != 0) {
+                        connectError = errno;
+                    }
+                }
+                else {
+                    connectError = ETIMEDOUT;
+                }
+            }
         }
 
-        if (connect(fd, ai->ai_addr, ai->ai_addrlen) == 0) {
+        if (connectError == 0) {
             break;
         }
 
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "connect to %s:%s failed: %s",
-                     host.c_str(), portString.c_str(), strerror(errno));
+        if (!isCancelled(cancel)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "connect to %s:%s failed: %s",
+                         host.c_str(), portString.c_str(), strerror(connectError));
+        }
         close(fd);
         fd = -1;
     }
@@ -61,21 +128,30 @@ int connectTcp(const std::string& host, uint16_t port, int timeoutSeconds, std::
     freeaddrinfo(result);
 
     if (fd < 0) {
-        error = "Unable to connect to " + host + ":" + portString;
+        error = isCancelled(cancel) ? kCancelledError : "Unable to connect to " + host + ":" + portString;
     }
 
     return fd;
 }
 
-bool sendAll(int fd, const std::string& data)
+bool sendAll(int fd, const std::string& data, int timeoutSeconds,
+             const CancellationToken* cancel, std::string& error)
 {
     size_t sent = 0;
     while (sent < data.size()) {
         ssize_t ret = send(fd, data.data() + sent, data.size() - sent, 0);
-        if (ret <= 0) {
+        if (ret > 0) {
+            sent += (size_t)ret;
+        }
+        else if (ret < 0 && (errno == EAGAIN || errno == EINTR)) {
+            if (!waitForSocket(fd, POLLOUT, timeoutSeconds, cancel, error)) {
+                return false;
+            }
+        }
+        else {
+            error = std::string("send failed: ") + strerror(errno);
             return false;
         }
-        sent += (size_t)ret;
     }
     return true;
 }
@@ -245,63 +321,95 @@ bool verifyPinnedServerCert(SSL* ssl, const std::string& serverCertPem, std::str
     return ok;
 }
 
-bool readAll(int fd, std::string& response, std::string& error)
+bool readAll(int fd, std::string& response, int timeoutSeconds,
+             const CancellationToken* cancel, std::string& error)
 {
     char buffer[8192];
     for (;;) {
         ssize_t ret = recv(fd, buffer, sizeof(buffer), 0);
-        if (ret == 0) {
+        if (ret > 0) {
+            response.append(buffer, (size_t)ret);
+        }
+        else if (ret == 0) {
             return true;
         }
-        if (ret < 0) {
+        else if (errno == EAGAIN || errno == EINTR) {
+            if (!waitForSocket(fd, POLLIN, timeoutSeconds, cancel, error)) {
+                return false;
+            }
+        }
+        else {
             error = std::string("recv failed: ") + strerror(errno);
             return false;
         }
-        response.append(buffer, (size_t)ret);
     }
 }
 
-bool readAllSsl(SSL* ssl, std::string& response, std::string& error)
+// Runs one OpenSSL call on a non-blocking socket, waiting for the socket
+// whenever OpenSSL asks to. Returns the call's positive result, 0 on a clean
+// TLS close, or -1 on failure (with `error` set).
+template <typename Operation>
+int runSsl(SSL* ssl, int fd, int timeoutSeconds, const CancellationToken* cancel,
+           const char* what, std::string& error, Operation operation)
+{
+    for (;;) {
+        int ret = operation();
+        if (ret > 0) {
+            return ret;
+        }
+
+        switch (SSL_get_error(ssl, ret)) {
+        case SSL_ERROR_WANT_READ:
+            if (!waitForSocket(fd, POLLIN, timeoutSeconds, cancel, error)) {
+                return -1;
+            }
+            break;
+        case SSL_ERROR_WANT_WRITE:
+            if (!waitForSocket(fd, POLLOUT, timeoutSeconds, cancel, error)) {
+                return -1;
+            }
+            break;
+        case SSL_ERROR_ZERO_RETURN:
+            return 0;
+        default:
+            error = what;
+            return -1;
+        }
+    }
+}
+
+bool readAllSsl(SSL* ssl, int fd, std::string& response, int timeoutSeconds,
+                const CancellationToken* cancel, std::string& error)
 {
     char buffer[8192];
     for (;;) {
-        int ret = SSL_read(ssl, buffer, sizeof(buffer));
+        int ret = runSsl(ssl, fd, timeoutSeconds, cancel, "SSL_read failed", error, [&] {
+            return SSL_read(ssl, buffer, sizeof(buffer));
+        });
         if (ret > 0) {
             response.append(buffer, (size_t)ret);
-            continue;
         }
-
-        int sslError = SSL_get_error(ssl, ret);
-        if (sslError == SSL_ERROR_ZERO_RETURN) {
-            return true;
+        else {
+            return ret == 0;
         }
-
-        error = "SSL_read failed";
-        return false;
     }
 }
 
 } // namespace
 
 bool httpGet(const std::string& host, uint16_t port, const std::string& path,
-             std::string& response, std::string& error, int timeoutSeconds)
+             std::string& response, std::string& error, int timeoutSeconds,
+             const CancellationToken* cancel)
 {
-    int fd = connectTcp(host, port, timeoutSeconds, error);
+    int fd = connectTcp(host, port, timeoutSeconds, cancel, error);
     if (fd < 0) {
         return false;
     }
 
-    bool ok = sendAll(fd, buildRequest(host, port, path));
-    if (!ok) {
-        error = "Failed to send HTTP request";
-    }
-    else {
-        std::string raw;
-        ok = readAll(fd, raw, error);
-        if (ok) {
-            ok = parseHttpResponse(raw, response, error);
-        }
-    }
+    std::string raw;
+    bool ok = sendAll(fd, buildRequest(host, port, path), timeoutSeconds, cancel, error) &&
+              readAll(fd, raw, timeoutSeconds, cancel, error) &&
+              parseHttpResponse(raw, response, error);
 
     close(fd);
     return ok;
@@ -311,7 +419,8 @@ bool httpsGet(const std::string& host, uint16_t port, const std::string& path,
               const std::string& clientCertPem, const std::string& clientKeyPem,
               const std::string& serverCertPem,
               std::string& response, std::string& error,
-              int timeoutSeconds, int* httpStatusCode)
+              int timeoutSeconds, int* httpStatusCode,
+              const CancellationToken* cancel)
 {
     if (httpStatusCode != nullptr) {
         *httpStatusCode = 0;
@@ -322,7 +431,7 @@ bool httpsGet(const std::string& host, uint16_t port, const std::string& path,
         return false;
     }
 
-    int fd = connectTcp(host, port, timeoutSeconds, error);
+    int fd = connectTcp(host, port, timeoutSeconds, cancel, error);
     if (fd < 0) {
         SSL_CTX_free(ctx);
         return false;
@@ -337,24 +446,25 @@ bool httpsGet(const std::string& host, uint16_t port, const std::string& path,
         SSL_set_fd(ssl, fd);
         SSL_set_tlsext_host_name(ssl, host.c_str());
 
-        if (SSL_connect(ssl) != 1) {
-            error = "TLS handshake failed";
+        std::string request = buildRequest(host, port, path);
+        std::string raw;
+        if (runSsl(ssl, fd, timeoutSeconds, cancel, "TLS handshake failed", error,
+                   [&] { return SSL_connect(ssl); }) <= 0) {
+            // error is set
         }
         else if (!verifyPinnedServerCert(ssl, serverCertPem, error)) {
         }
-        else {
-            std::string request = buildRequest(host, port, path);
-            if (SSL_write(ssl, request.data(), (int)request.size()) != (int)request.size()) {
+        else if (runSsl(ssl, fd, timeoutSeconds, cancel, "Failed to send HTTPS request", error,
+                        [&] { return SSL_write(ssl, request.data(), (int)request.size()); }) != (int)request.size()) {
+            if (error.empty()) {
                 error = "Failed to send HTTPS request";
             }
-            else {
-                std::string raw;
-                if (readAllSsl(ssl, raw, error)) {
-                    ok = parseHttpResponse(raw, response, error, httpStatusCode);
-                }
-            }
+        }
+        else if (readAllSsl(ssl, fd, raw, timeoutSeconds, cancel, error)) {
+            ok = parseHttpResponse(raw, response, error, httpStatusCode);
         }
 
+        // Best effort: don't wait for the host's close_notify.
         SSL_shutdown(ssl);
         SSL_free(ssl);
     }
