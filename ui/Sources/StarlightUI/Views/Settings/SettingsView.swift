@@ -44,6 +44,7 @@ private struct GeneralSettings: View {
             } footer: {
                 Text("AirDrop’s wireless scanning can cause stutter on Wi‑Fi.")
                     .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             Section {
                 Toggle("Show performance statistics", isOn: $showPerformanceOverlay)
@@ -244,6 +245,7 @@ private struct InputSettings: View {
             } footer: {
                 Text("Includes ⌘Tab, Mission Control and Spotlight.")
                     .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             Section("Mouse") {
                 Toggle(isOn: $absoluteMouse) {

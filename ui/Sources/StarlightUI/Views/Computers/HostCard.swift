@@ -68,7 +68,8 @@ struct HostCard: View {
             } label: {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    // A plain button doesn't dim its label when disabled.
+                    .foregroundStyle(canExpand ? HierarchicalShapeStyle.secondary : .quaternary)
                     .rotationEffect(.degrees(isExpanded && canExpand ? 90 : 0))
                     .frame(width: 16, height: 16)
                     .contentShape(Rectangle())
@@ -192,6 +193,7 @@ struct AppRow: View {
         .onTapGesture(perform: select)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction(.default, select)
         .accessibilityAction(named: "Connect", launch)
     }
 
