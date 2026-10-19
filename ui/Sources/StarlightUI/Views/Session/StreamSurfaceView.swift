@@ -60,13 +60,24 @@ struct StreamSurface: NSViewRepresentable {
 struct WindowAccessor: NSViewRepresentable {
     var onWindow: (NSWindow?) -> Void
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async { [weak view] in
-            onWindow(view?.window)
-        }
+    func makeNSView(context: Context) -> WindowReportingView {
+        let view = WindowReportingView()
+        view.onWindow = onWindow
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: WindowReportingView, context: Context) {
+        nsView.onWindow = onWindow
+    }
+
+    /// Reports its window whenever it moves into one, which can happen after
+    /// SwiftUI creates it.
+    final class WindowReportingView: NSView {
+        var onWindow: ((NSWindow?) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            onWindow?(window)
+        }
+    }
 }
