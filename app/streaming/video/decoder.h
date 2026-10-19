@@ -40,6 +40,7 @@ typedef struct _DECODER_PARAMETERS {
     SDL_Window* window;
     StreamingPreferences::VideoDecoderSelection vds;
     StreamingPreferences::RendererSelection renderer;
+    StreamingPreferences::FrameLatencyMode frameLatencyMode;
 
     int videoFormat;
     int width;

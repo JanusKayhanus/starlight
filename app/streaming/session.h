@@ -213,7 +213,8 @@ private:
                        SDL_Window* window, int videoFormat, int width, int height,
                        int frameRate, bool enableVsync, bool enableFramePacing,
                        bool testOnly,
-                       IVideoDecoder*& chosenDecoder);
+                       IVideoDecoder*& chosenDecoder,
+                       StreamingPreferences::FrameLatencyMode frameLatencyMode = StreamingPreferences::FLM_DEFAULT);
 
     static
     void clStageStarting(int stage);

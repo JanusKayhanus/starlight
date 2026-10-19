@@ -119,6 +119,18 @@ public:
     };
     Q_ENUM(CaptureSysKeysMode);
 
+    // Mac only (for now). Trades presentation latency for smoother frame
+    // delivery by tuning the Metal renderer's drawable pool size and its
+    // display link frame latency target.
+    enum FrameLatencyMode
+    {
+        FLM_DEFAULT,  // Renderer defaults (lowest latency, unchanged behavior)
+        FLM_FAST,     // Less buffering for the lowest possible latency
+        FLM_BALANCED, // A little slack to absorb jitter
+        FLM_SMOOTH    // Most slack for the steadiest frame delivery
+    };
+    Q_ENUM(FrameLatencyMode)
+
     Q_PROPERTY(int width MEMBER width NOTIFY displayModeChanged)
     Q_PROPERTY(int height MEMBER height NOTIFY displayModeChanged)
     Q_PROPERTY(int fps MEMBER fps NOTIFY displayModeChanged)
@@ -157,6 +169,7 @@ public:
     Q_PROPERTY(bool keepAwake MEMBER keepAwake NOTIFY keepAwakeChanged)
     Q_PROPERTY(bool disableAwdl MEMBER disableAwdl NOTIFY disableAwdlChanged)
     Q_PROPERTY(CaptureSysKeysMode captureSysKeysMode MEMBER captureSysKeysMode NOTIFY captureSysKeysModeChanged)
+    Q_PROPERTY(FrameLatencyMode frameLatencyMode MEMBER frameLatencyMode NOTIFY frameLatencyModeChanged)
     Q_PROPERTY(Language language MEMBER language NOTIFY languageChanged);
 
     Q_INVOKABLE bool retranslate();
@@ -202,6 +215,7 @@ public:
     Language language;
     CaptureSysKeysMode captureSysKeysMode;
     RendererSelection rendererSelection;
+    FrameLatencyMode frameLatencyMode;
 
 signals:
     void displayModeChanged();
@@ -241,6 +255,7 @@ signals:
     void disableAwdlChanged();
     void languageChanged();
     void rendererSelectionChanged();
+    void frameLatencyModeChanged();
 
 private:
     explicit StreamingPreferences(QQmlEngine *qmlEngine);

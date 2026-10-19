@@ -53,6 +53,7 @@
 #define SER_DISABLEAWDL "disableawdl"
 #define SER_LANGUAGE "language"
 #define SER_RENDERER "renderer"
+#define SER_FRAMELATENCY "framelatency"
 
 #define CURRENT_DEFAULT_VER 2
 
@@ -164,6 +165,8 @@ void StreamingPreferences::reload()
                                                   static_cast<int>(VideoDecoderSelection::VDS_AUTO)).toInt());
     rendererSelection = static_cast<RendererSelection>(settings.value(SER_RENDERER,
                                                   static_cast<int>(RendererSelection::RS_AUTO)).toInt());
+    frameLatencyMode = static_cast<FrameLatencyMode>(settings.value(SER_FRAMELATENCY,
+                                                  static_cast<int>(FrameLatencyMode::FLM_DEFAULT)).toInt());
     windowMode = static_cast<WindowMode>(settings.value(SER_WINDOWMODE,
                                                         // Try to load from the old preference value too
                                                         static_cast<int>(settings.value(SER_FULLSCREEN, true).toBool() ?
@@ -353,6 +356,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_VIDEOCFG, static_cast<int>(videoCodecConfig));
     settings.setValue(SER_VIDEODEC, static_cast<int>(videoDecoderSelection));
     settings.setValue(SER_RENDERER, static_cast<int>(rendererSelection));
+    settings.setValue(SER_FRAMELATENCY, static_cast<int>(frameLatencyMode));
     settings.setValue(SER_WINDOWMODE, static_cast<int>(windowMode));
     settings.setValue(SER_UIDISPLAYMODE, static_cast<int>(uiDisplayMode));
     settings.setValue(SER_LANGUAGE, static_cast<int>(language));

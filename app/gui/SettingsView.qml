@@ -1854,6 +1854,56 @@ T.Drawer {
                         }
 
                         SettingsRow {
+                            title: qsTr("Frame latency")
+                            subtitle: qsTr("Trade presentation latency for smoother frame delivery.")
+                            visible: SystemProperties.isDarwin
+
+                            SettingsComboBox {
+                                // ignore setting the index at first, and actually set it when the component is loaded
+                                Component.onCompleted: {
+                                    var saved = StreamingPreferences.frameLatencyMode
+
+                                    currentIndex = 0
+
+                                    for (var i = 0; i < latencyListModel.count; i++) {
+                                        if (latencyListModel.get(i).val === saved) {
+                                            currentIndex = i
+                                            break
+                                        }
+                                    }
+
+                                    activated(currentIndex)
+                                }
+
+                                id: latencyComboBox
+                                textRole: "text"
+                                model: ListModel {
+                                    id: latencyListModel
+                                    ListElement {
+                                        text: qsTr("Default")
+                                        val: StreamingPreferences.FLM_DEFAULT
+                                    }
+                                    ListElement {
+                                        text: qsTr("Fast (lowest latency)")
+                                        val: StreamingPreferences.FLM_FAST
+                                    }
+                                    ListElement {
+                                        text: qsTr("Balanced")
+                                        val: StreamingPreferences.FLM_BALANCED
+                                    }
+                                    ListElement {
+                                        text: qsTr("Smooth")
+                                        val: StreamingPreferences.FLM_SMOOTH
+                                    }
+                                }
+                                // ::onActivated must be used, as it only listens for when the index is changed by a human
+                                onActivated : {
+                                    StreamingPreferences.frameLatencyMode = latencyListModel.get(currentIndex).val
+                                }
+                            }
+                        }
+
+                        SettingsRow {
                             title: qsTr("Enable YUV 4:4:4")
                             subtitle: qsTr("Good for streaming desktop and text-heavy games, but not recommended for fast-paced games.")
                             toggleTarget: enableYUV444

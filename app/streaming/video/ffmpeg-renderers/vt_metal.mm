@@ -78,7 +78,9 @@ public:
           m_LastFrameWidth(-1),
           m_LastFrameHeight(-1),
           m_LastDrawableWidth(-1),
-          m_LastDrawableHeight(-1)
+          m_LastDrawableHeight(-1),
+          m_MaxDrawableCount(0),
+          m_PreferredFrameLatency(1.0f)
     {
     }
 
@@ -739,6 +741,40 @@ public:
             // Choose a device
             m_MetalLayer.device = device;
 
+            // Tune the drawable pool and frame pacing from the user's
+            // latency/smoothness preference. FLM_DEFAULT leaves the drawable
+            // count at the CAMetalLayer default and keeps the original
+            // single-frame latency target (i.e. today's behavior).
+            switch (params->frameLatencyMode) {
+            case StreamingPreferences::FLM_FAST:
+                m_MaxDrawableCount = 2;
+                m_PreferredFrameLatency = 1.0f;
+                break;
+            case StreamingPreferences::FLM_BALANCED:
+                m_MaxDrawableCount = 3;
+                m_PreferredFrameLatency = 2.0f;
+                break;
+            case StreamingPreferences::FLM_SMOOTH:
+                m_MaxDrawableCount = 3;
+                m_PreferredFrameLatency = 3.0f;
+                break;
+            case StreamingPreferences::FLM_DEFAULT:
+            default:
+                m_MaxDrawableCount = 0;
+                m_PreferredFrameLatency = 1.0f;
+                break;
+            }
+
+            if (m_MaxDrawableCount > 0) {
+                m_MetalLayer.maximumDrawableCount = m_MaxDrawableCount;
+            }
+
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "Frame latency mode: %d (max drawables: %d, preferred latency: %.1f)",
+                        params->frameLatencyMode,
+                        m_MaxDrawableCount,
+                        m_PreferredFrameLatency);
+
             // Allow EDR content if we're streaming in a 10-bit format
             m_MetalLayer.wantsExtendedDynamicRangeContent = !!(params->videoFormat & VIDEO_FORMAT_MASK_10BIT);
 
@@ -819,7 +855,7 @@ public:
             }
 
             m_MetalDisplayLink = [[CAMetalDisplayLink alloc] initWithMetalLayer:m_MetalLayer];
-            m_MetalDisplayLink.preferredFrameLatency = 1.0f;
+            m_MetalDisplayLink.preferredFrameLatency = m_PreferredFrameLatency;
             m_MetalDisplayLink.preferredFrameRateRange = m_FrameRateRange;
             m_MetalDisplayLink.delegate = [[DisplayLinkDelegate alloc] initWithRenderer:this];
             [m_MetalDisplayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
@@ -965,6 +1001,11 @@ private:
     int m_LastFrameHeight;
     int m_LastDrawableWidth;
     int m_LastDrawableHeight;
+    // Drawable pool size to request (0 = leave CAMetalLayer's default) and the
+    // display link's presentation latency target, derived from the
+    // StreamingPreferences::FrameLatencyMode setting.
+    int m_MaxDrawableCount;
+    float m_PreferredFrameLatency;
 };
 
 @implementation DisplayLinkDelegate {
