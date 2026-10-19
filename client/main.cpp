@@ -40,6 +40,18 @@ bool g_streamEnded = false;
 int g_connectionError = 0;
 DECODER_RENDERER_CALLBACKS g_videoCallbacks;
 
+std::string xmlAttribute(const std::string& xml, const char* name)
+{
+    std::string needle = std::string(name) + "=\"";
+    size_t start = xml.find(needle);
+    if (start == std::string::npos) {
+        return {};
+    }
+    start += needle.size();
+    size_t end = xml.find('"', start);
+    return end == std::string::npos ? std::string() : xml.substr(start, end - start);
+}
+
 std::string xmlTag(const std::string& xml, const char* tag)
 {
     std::string open = std::string("<") + tag + ">";
@@ -312,6 +324,15 @@ int runStream(const std::string& serverInfo)
 
     std::string rtspSessionUrl = xmlTag(launchResponse, "sessionUrl0");
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Launch response: %s", launchResponse.c_str());
+
+    std::string statusCode = xmlAttribute(launchResponse, "status_code");
+    if (!statusCode.empty() && statusCode != "200") {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "Host rejected the launch: %s (%s)",
+                     xmlAttribute(launchResponse, "status_message").c_str(),
+                     statusCode.c_str());
+        return 1;
+    }
 
     SERVER_INFORMATION hostInfo;
     LiInitializeServerInformation(&hostInfo);
