@@ -6,6 +6,7 @@ import SwiftUI
 /// host or to the streaming core.
 @main
 struct MockStarlightApp: App {
+    @NSApplicationDelegateAdaptor private var appDelegate: MockAppDelegate
     @State private var store: HostStore
 
     /// A separate preferences suite, so the mock never edits the real app's
@@ -26,5 +27,18 @@ struct MockStarlightApp: App {
 
     var body: some Scene {
         StarlightScenes(store: store, defaults: defaults)
+    }
+}
+
+final class MockAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Stream windows aren't documents; keep Show Tab Bar out of the View menu.
+        NSWindow.allowsAutomaticWindowTabbing = false
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // `swift run` launches the executable from a terminal, which stays the
+        // active app, so bring the mock to the front once it has launched.
+        NSApp.activate()
     }
 }
