@@ -218,7 +218,37 @@ private struct Resolution: Hashable, Identifiable {
                 choices.append(native)
             }
         }
+
+        // And, on a display with a notch, the area below it, which the
+        // stream can fill without the camera housing covering anything.
+        if let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }),
+           let size = belowNotchSize(of: screen) {
+            let belowNotch = Resolution(width: size.width, height: size.height,
+                                        title: "This Mac’s display below the notch (\(size.width) × \(size.height))")
+            if !choices.contains(belowNotch) {
+                choices.append(belowNotch)
+            }
+        }
         return choices
+    }
+
+    /// The display's own mode for the area below the notch: as wide as the
+    /// panel but shorter, such as 3456 × 2160 on a 3456 × 2234 panel.
+    @MainActor
+    private static func belowNotchSize(of screen: NSScreen) -> (width: Int, height: Int)? {
+        guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
+              let modes = CGDisplayCopyAllDisplayModes(displayID, [kCGDisplayShowDuplicateLowResolutionModes: true] as CFDictionary)
+                as? [CGDisplayMode] else {
+            return nil
+        }
+
+        let width = Int(screen.frame.width * screen.backingScaleFactor)
+        let fullHeight = Int(screen.frame.height * screen.backingScaleFactor)
+        let height = modes
+            .filter { $0.pixelWidth == width && $0.pixelHeight < fullHeight }
+            .map(\.pixelHeight)
+            .max()
+        return height.map { (width, $0) }
     }
 }
 
