@@ -1,39 +1,14 @@
 *pro.user
-
-
 **/.vs/
 .vscode/
 build/
 libs/
-config.tests/*/.qmake.stash
-config.tests/*/Makefile
-
-# qmake configuration and generated build files
-.qmake.cache
-.qmake.stash
-Makefile
-Makefile.Debug
-Makefile.Release
-/config.log
-/app/Info.plist-e
-/app/qml_qmlcache.qrc
-
-# In-source build output (keep source and project files tracked)
-/app/debug/
-/app/release/
-/app/*.app/
-/awdl-helper/debug/
-/awdl-helper/release/
-/awdl-helper/MoonlightAWDLHelper
-/h264bitstream/debug/
-/h264bitstream/release/
-/h264bitstream/libh264bitstream.a
-/moonlight-common-c/debug/
-/moonlight-common-c/release/
-/moonlight-common-c/libmoonlight-common-c.a
-/qmdnsengine/debug/
-/qmdnsengine/release/
-/qmdnsengine/libqmdnsengine.a
 
 # macOS Finder metadata
 .DS_Store
+
+# CMake/IDE output
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json

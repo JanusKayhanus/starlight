@@ -1,54 +1,49 @@
-# Moonlight for macOS (experimental fork)
+# Moonlight Desktop (Qt-free macOS client)
 
-This branch is an experimental macOS-only fork of [Moonlight](https://moonlight-stream.org), an open source client for NVIDIA GameStream and [Sunshine](https://github.com/LizardByte/Sunshine).
+This experimental branch is a macOS-only, Qt-free direct-streaming client for
+[NVIDIA GameStream / Sunshine](https://github.com/LizardByte/Sunshine).
 
-Windows, Linux, Steam Link, DirectX, and Vulkan support have been removed. Video decoding and rendering use Apple's VideoToolbox framework through either the Metal renderer or AVSampleBufferDisplayLayer, with an SDL fallback for software decoding. The UI uses the native macOS Qt Quick Controls style.
+On launch, it reads the already-paired **DESKTOP-BUO46UK** host from Moonlight's
+saved preferences and immediately opens the **Desktop** app in a fullscreen
+stream window. There is no launcher, settings window, host discovery, pairing
+flow, or Qt runtime.
 
-Moonlight also has mobile versions for [Android](https://github.com/moonlight-stream/moonlight-android) and [iOS](https://github.com/moonlight-stream/moonlight-ios).
+The app uses:
+- **moonlight-common-c** for the GameStream protocol
+- **FFmpeg + VideoToolbox** for H.264 hardware decoding
+- **SDL2** for the window, Metal-backed presentation, audio output, and input
+- **OpenSSL** for the HTTPS launch request, using the existing paired identity
+- **CoreFoundation preferences** to read the host and client certificates
 
-You can follow development on our [Discord server](https://moonlight-stream.org/discord) and help translate Moonlight into your language on [Weblate](https://hosted.weblate.org/projects/moonlight/moonlight-qt/).
+## Build
 
- [![Build](https://img.shields.io/github/actions/workflow/status/moonlight-stream/moonlight-qt/build.yml?branch=master)](https://github.com/moonlight-stream/moonlight-qt/actions/workflows/build.yml?query=branch%3Amaster)
- [![Downloads](https://img.shields.io/github/downloads/moonlight-stream/moonlight-qt/total)](https://github.com/moonlight-stream/moonlight-qt/releases)
- [![Translation Status](https://hosted.weblate.org/widgets/moonlight/-/moonlight-qt/svg-badge.svg)](https://hosted.weblate.org/projects/moonlight/moonlight-qt/)
+Requirements:
+- macOS 13 or later
+- Xcode command line tools
+- CMake 3.20+ and Ninja
+- Prebuilt SDL2/FFmpeg/OpenSSL/Opus dependencies
 
-## Features
- - Hardware accelerated video decoding on macOS
- - H.264, HEVC, and AV1 codec support (AV1 requires Sunshine and a supported host GPU)
- - YUV 4:4:4 support (Sunshine only)
- - HDR streaming support
- - 7.1 surround sound audio support
- - 10-point multitouch support (Sunshine only)
- - Gamepad support with force feedback and motion controls for up to 16 players
- - Support for both pointer capture (for games) and direct mouse control (for remote desktop)
- - Support for passing system-wide keyboard shortcuts like Alt+Tab to the host
- 
-## Downloads
+Setup:
+```sh
+git submodule update --init --recursive
+python3 setup-deps.py
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+open build/Moonlight.app
+```
 
-This experimental fork does not publish binaries. Build it from source using the instructions below.
+For a distributable DMG:
+```sh
+scripts/generate-dmg.sh Release
+```
 
-## Building
+The host, app ID, and paired credentials are read from the existing
+`com.moonlight-stream.Moonlight` preferences. If DESKTOP-BUO46UK has not been
+paired by the previous Moonlight app, launch will fail; pair it once with the
+original client first.
 
-### macOS Build Requirements
-* Qt 6.11 SDK or later (earlier versions may work but are not officially supported)
-* Xcode 15 or later (earlier versions may work but are not officially supported)
-* [create-dmg](https://github.com/sindresorhus/create-dmg) (only if building DMGs for use on non-development Macs)
+Optional environment overrides for the stream (defaults: 3456x2160, 60 FPS, 100 Mbps):
+- `MOONLIGHT_WIDTH`, `MOONLIGHT_HEIGHT`, `MOONLIGHT_FPS`
+- `MOONLIGHT_BITRATE` (kbps)
 
-### Build Setup Steps
-1. Install the latest Qt SDK (and optionally, the Qt Creator IDE) from https://www.qt.io/download
-    * You can install Qt via Homebrew on macOS, but you will need a debug-enabled Qt build to create debug builds of Moonlight.
-2. Download submodules and dependencies
-    * Run `git submodule update --init --recursive` from within `moonlight-qt/`.
-    * Run `python3 setup-deps.py` to fetch the prebuilt macOS dependencies.
-    * Perform these steps each time you pull new changes from the Git repository.
-3. Open the project in Qt Creator or build from qmake on the command line.
-    * To build a binary for use on non-development machines, run `scripts/generate-dmg.sh`. Execute this script from the root of the repository and ensure Qt's `bin` folder is in your `$PATH`.
-    * To build from the command line for development use, run `qmake6 moonlight-qt.pro` then `make debug` or `make release`.
-        * The final binary will be placed in `app/Moonlight.app`.
-
-## Contribute
-1. Fork us
-2. Write code
-3. Send Pull Requests
-
-Check out our [website](https://moonlight-stream.org) for project links and information.
+Exit the stream with **Cmd+Q** or **Ctrl+Alt+Shift+Q**.
