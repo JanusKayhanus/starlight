@@ -43,19 +43,20 @@ void LogStreamWindowInfo(SDL_Window* window, const char* when)
 
 void MacOSConfigureStreamWindow(SDL_Window* window, bool useSpaces)
 { @autoreleasepool {
-    // Hide the menu bar and Dock so the video can reach the physical edges of
-    // the display. AppKit otherwise reserves the menu bar strip (~30 pt) even
-    // while the window is in a fullscreen Space.
-    [NSApp setPresentationOptions:(NSApplicationPresentationHideDock |
-                                   NSApplicationPresentationHideMenuBar)];
-
     if (useSpaces) {
-        // Presentation options were applied before the fullscreen transition
-        // (see Session::exec), which lets AppKit size the fullscreen Space to
-        // the full display. Do not touch the frame here: resizing a window
-        // while it is entering a Space makes AppKit abort the transition.
+        // Fullscreen Spaces are only used on displays with a notch (see
+        // shouldUseFullScreenSpaces() in session.cpp), where AppKit sizes the
+        // Space to the area below the notch. Hiding the menu bar now would
+        // make it size the Space to the whole panel, under the notch again.
+        // Don't touch the frame either: resizing a window while it is
+        // entering a Space makes AppKit abort the transition.
         return;
     }
+
+    // Hide the menu bar and Dock so the video can reach the physical edges of
+    // the display. AppKit otherwise reserves the menu bar strip (~30 pt).
+    [NSApp setPresentationOptions:(NSApplicationPresentationHideDock |
+                                   NSApplicationPresentationHideMenuBar)];
 
     SDL_SysWMinfo info;
     SDL_VERSION(&info.version);

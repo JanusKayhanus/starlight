@@ -512,6 +512,42 @@ Session::~Session()
     SDL_DestroyMutex(m_DecoderLock);
 }
 
+// Whether to stream in a fullscreen Space rather than a borderless window
+// covering the whole display. On a display with a notch, macOS places a
+// fullscreen Space below the notch, which is what the Qt build relied on; the
+// borderless window would put the top of the video underneath the notch. The
+// one exception, as in the Qt build, is streaming at the panel's full
+// resolution, notch area included.
+static bool shouldUseFullScreenSpaces(const StreamingPreferences* preferences)
+{
+    // Called before SDL's video subsystem starts, so this uses CoreGraphics
+    // display indexes, which also start with the main display.
+    int displayIndex = preferences->startDisplay >= 0 ? preferences->startDisplay : 0;
+    SDL_DisplayMode nativeMode;
+    SDL_Rect safeArea;
+    if (!StreamUtils::getNativeDesktopMode(displayIndex, &nativeMode, &safeArea) &&
+            !StreamUtils::getNativeDesktopMode(0, &nativeMode, &safeArea)) {
+        return false;
+    }
+
+    bool hasNotch = nativeMode.w != safeArea.w || nativeMode.h != safeArea.h;
+    if (!hasNotch) {
+        return false;
+    }
+
+    if (preferences->width == nativeMode.w && preferences->height == nativeMode.h) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Streaming at the full %dx%d panel, including the notch area",
+                    nativeMode.w, nativeMode.h);
+        return false;
+    }
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Display has a notch (safe area %dx%d); keeping the stream below it",
+                safeArea.w, safeArea.h);
+    return true;
+}
+
 bool Session::initialize()
 {
     // Use a borderless fullscreen window rather than a fullscreen Space.
@@ -519,8 +555,10 @@ bool Session::initialize()
     // uncovered (~30 pt), which shows up as a black bar at the top of the
     // stream. The borderless path covers the entire display; see
     // MacOSConfigureStreamWindow() for the window level/collection behavior
-    // that keeps it visible in Mission Control.
-    SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, "0");
+    // that keeps it visible in Mission Control. On a display with a notch,
+    // that strip is where the notch is, so a Space is what we want there.
+    SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES,
+                shouldUseFullScreenSpaces(m_Preferences) ? "1" : "0");
 
     // Allow experimentation with the two macOS fullscreen implementations.
     const char* forceSpaces = getenv("MOONLIGHT_FULLSCREEN_SPACES");
