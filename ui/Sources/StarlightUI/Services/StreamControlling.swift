@@ -38,7 +38,9 @@ public protocol StreamControlling: AnyObject {
     var onTermination: ((StreamTermination) -> Void)? { get set }
 
     /// Launches (or resumes) `app` on `host` and starts presenting into
-    /// `surface`. Returns once the first frame is on screen.
+    /// `surface`. Returns once the first frame is on screen. Must throw
+    /// `CancellationError` promptly when its task is cancelled, which happens
+    /// when the window is closed while connecting.
     func start(host: RemoteHost, app: HostApp, surface: StreamSurfaceView) async throws
 
     /// Ends the stream. Safe to call more than once.

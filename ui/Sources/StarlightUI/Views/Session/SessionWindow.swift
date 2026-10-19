@@ -57,7 +57,7 @@ private struct SessionView: View {
 
     var body: some View {
         StreamSurface { surface in
-            Task { await model.start(on: surface) }
+            model.start(on: surface)
         }
         .overlay {
             switch model.state {

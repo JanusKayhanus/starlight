@@ -26,7 +26,7 @@ public final class SessionModel {
     @ObservationIgnored var onEnded: (() -> Void)?
 
     private let controller: any StreamControlling
-    private var hasStarted = false
+    @ObservationIgnored private var startTask: Task<Void, Never>?
 
     init(request: SessionRequest, host: RemoteHost, app: HostApp, controller: any StreamControlling) {
         self.request = request
@@ -47,25 +47,28 @@ public final class SessionModel {
         }
     }
 
-    func start(on surface: StreamSurfaceView) async {
-        guard !hasStarted else { return }
-        hasStarted = true
+    func start(on surface: StreamSurfaceView) {
+        guard startTask == nil else { return }
 
-        do {
-            try await controller.start(host: host, app: app, surface: surface)
-            if state == .connecting {
-                state = .streaming
+        startTask = Task {
+            do {
+                try await controller.start(host: host, app: app, surface: surface)
+                if state == .connecting {
+                    state = .streaming
+                }
+            } catch is CancellationError {
+                // The window was closed while connecting.
+            } catch {
+                state = .failed(message: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
             }
-        } catch is CancellationError {
-            // The window was closed while connecting.
-        } catch {
-            state = .failed(message: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
         }
     }
 
     /// Ends the stream. Called when the window closes.
     public func stop() {
         guard state != .ended else { return }
+        // Closing the window while connecting must not leave the launch running.
+        startTask?.cancel()
         controller.stop()
         state = .ended
         onEnded?()
